@@ -1,31 +1,59 @@
-import os 
+import pickle
+from pathlib import Path
 
 def verify_data_path(data_dir):
     """
-    Verify that the given data directory exists and contains readable files.
+    Check whether a given path exists.
 
     Parameters
     ----------
-    data_dir : str
-        Path to the directory where the dataset is expected to be located.
+    data_dir : str or pathlib.Path
+        Path to check.
 
     Returns
     -------
     bool
-        True if the directory exists and contains files, False otherwise.
+        True if the path exists, False otherwise.
     """
-    if not os.path.exists(data_dir):
+    data_path = Path(data_dir)
+    exists = data_path.exists()
+
+    if exists:
+        print(f"Path exists: {data_path}")
+    else:
         print(f"Path does not exist: {data_dir}")
-        return False
+    
 
-    if not os.path.isdir(data_dir):
-        print(f"Path exists but is not a directory: {data_dir}")
-        return False
+def load_pkl(pkl_file):
+    """
+    Load and deserialize a Python object from a pickle file.
 
-    files = os.listdir(data_dir)
-    if not files:
-        print(f"The directory {data_dir} is empty.")
-        return False
+    This function provides a safe and readable interface for loading
+    `.pkl` files. It performs basic validation, including checking 
+    for file existence and extension consistency, and raises informative
+    errors if deserialization fails.
 
-    print(f"Valid path. Found {len(files)} items.")
-    return True
+    Parameters
+    ----------
+    pkl_file : str or pathlib.Path
+        Path to the pickle file to load.
+
+    Returns
+    -------
+    object
+        The Python object stored inside the pickle file.
+    """
+    pkl_path = Path(pkl_file)
+
+    if not pkl_path.exists():
+        raise FileNotFoundError(f"File not found: {pkl_path}")
+
+    if pkl_path.suffix != ".pkl":
+        print("The input file does not have a .pkl extension")
+    
+    try:
+        with open(pkl_path, "rb") as pkl:
+            return pickle.load(pkl)
+    except pickle.UnpicklingError as e:
+        raise pickle.UnpicklingError(f"Error unpickling {pkl_path}: {e}")
+    
