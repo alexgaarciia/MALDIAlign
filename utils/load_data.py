@@ -15,11 +15,8 @@ def verify_data_path(data_dir):
     bool
         True if the path exists, False otherwise.
     """
-    data_path = Path(data_dir)
-    exists = data_path.exists()
-
-    if exists:
-        print(f"Path exists: {data_path}")
+    if Path(data_dir).exists():
+        print(f"Path exists: {data_dir}")
     else:
         print(f"Path does not exist: {data_dir}")
     
