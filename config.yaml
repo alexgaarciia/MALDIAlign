@@ -1,0 +1,3 @@
+data:
+  PATH_BACTERIA_ID: "/export/data_ml4ds/bacteria_id"
+  MARISMA_PICKLE: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/MARISMa_study.pkl"
