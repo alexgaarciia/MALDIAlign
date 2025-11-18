@@ -1,7 +1,5 @@
 import os 
 
-PATH_BACTERIA_ID = "/export/data_ml4ds/bacteria_id"
-
 def verify_data_path(data_dir):
     """
     Verify that the given data directory exists and contains readable files.
@@ -31,6 +29,3 @@ def verify_data_path(data_dir):
 
     print(f"Valid path. Found {len(files)} items.")
     return True
-
-verify_data_path(PATH_BACTERIA_ID)
-
