@@ -1,0 +1,10 @@
+=== Logistic Regression Baseline Run ===
+Timestamp: 20251125_1455
+Starting grid search...
+Fitting 5 folds for each of 40 candidates, totalling 200 fits
+/usr/lib/python3.13/site-packages/sklearn/linear_model/_logistic.py:1296: FutureWarning: Using the 'liblinear' solver for multiclass classification is deprecated. An error will be raised in 1.8. Either use another solver which supports the multinomial loss or wrap the estimator in a OneVsRestClassifier to keep applying a one-versus-rest scheme.
+  warnings.warn(
+
+=== Grid Search Finished ===
+Best parameters: {'lr__C': np.float64(0.001), 'lr__penalty': 'l2', 'scaler': 'passthrough'}
+Best balanced accuracy (CV): 0.9991097130141693
