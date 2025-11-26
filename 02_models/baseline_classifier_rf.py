@@ -41,7 +41,6 @@ from utils.load_data import load_pkl
 
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
 

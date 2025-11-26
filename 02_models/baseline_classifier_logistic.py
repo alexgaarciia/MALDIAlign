@@ -43,6 +43,7 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+from sklearn.decomposition import PCA
 
 
 ################################################################################
@@ -112,15 +113,15 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # Define the pipeline
 pipe_logistic = Pipeline([
-    ('scaler', 'passthrough'),
+    ('scaler', StandardScaler()),
+    ('pca', PCA()),
     ('lr', LogisticRegression(solver='liblinear', max_iter=1000))
 ])
 
 # Define the hyperparameter grid
 param_grid = {
-    'scaler': ['passthrough', StandardScaler()],
+    'pca__n_components': [200, 500, 800, 1000],
     'lr__C': np.logspace(-3, 3, 10),
-    'lr__penalty': ['l1', 'l2']
 }
 
 # Train 
