@@ -114,13 +114,12 @@ X_train, X_test, y_train, y_test = train_test_split(
 # Define the pipeline
 pipe_logistic = Pipeline([
     ('scaler', StandardScaler()),
-    ('pca', PCA()),
+    ('pca', PCA(n_components=816)),
     ('lr', LogisticRegression(solver='liblinear', max_iter=1000))
 ])
 
 # Define the hyperparameter grid
 param_grid = {
-    'pca__n_components': [200, 500, 800, 1000],
     'lr__C': np.logspace(-3, 3, 10),
 }
 
