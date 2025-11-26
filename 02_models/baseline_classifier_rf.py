@@ -40,7 +40,7 @@ from utils.load_config import load_config
 from utils.load_data import load_pkl
 
 from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.linear_model import LogisticRegression
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
@@ -55,9 +55,7 @@ log_dir.mkdir(exist_ok=True)
 
 # Create a timestamped log filename
 timestamp = datetime.now().strftime("%Y%m%d_%H%M")
-log_file = log_dir / f"logistic_baseline_{timestamp}.log"
-results_file = log_dir / f"logistic_results_{timestamp}.csv"
-
+log_file = log_dir / f"rf_baseline_{timestamp}.log"
 print(f"Logging to: {log_file}")
 
 
@@ -111,22 +109,24 @@ X_train, X_test, y_train, y_test = train_test_split(
 ################################################################################
 
 # Define the pipeline
-pipe_logistic = Pipeline([
-    ('scaler', 'passthrough'),
-    ('lr', LogisticRegression(solver='liblinear', max_iter=1000))
+pipe_rf = Pipeline([
+    ('rf', RandomForestClassifier(class_weight='balanced'))
 ])
 
 # Define the hyperparameter grid
-param_grid = {
-    'scaler': ['passthrough', StandardScaler()],
-    'lr__C': np.logspace(-3, 3, 10),
-    'lr__penalty': ['l1', 'l2']
-}
+param_grid_rf = [
+    {
+        'rf__criterion': ['gini', 'entropy'],
+        'rf__bootstrap': [True, False],
+        'rf__n_estimators': [50, 100, 200],
+        'rf__max_features': ['sqrt', 'log2']
+    }
+]
 
 # Train 
-grid_logistic = GridSearchCV(
-    estimator=pipe_logistic,
-    param_grid=param_grid,
+grid_rf = GridSearchCV(
+    estimator=pipe_rf,
+    param_grid=param_grid_rf,
     cv=5,
     scoring='balanced_accuracy',
     n_jobs=-1,
@@ -136,12 +136,12 @@ grid_logistic = GridSearchCV(
 sys.stdout = open(log_file, "w")
 sys.stderr = sys.stdout
 
-print(f"=== Logistic Regression Baseline Run ===")
+print("=== Random Forest Baseline Run ===")
 print(f"Timestamp: {timestamp}")
 print("Starting grid search...")
 
-grid_logistic.fit(X_train, y_train)
+grid_rf.fit(X_train, y_train)
 
 print("\n=== Grid Search Finished ===")
-print("Best parameters:", grid_logistic.best_params_)
-print("Best balanced accuracy (CV):", grid_logistic.best_score_)
+print("Best parameters:", grid_rf.best_params_)
+print("Best balanced accuracy (CV):", grid_rf.best_score_)
