@@ -97,15 +97,12 @@ dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_
 # Split Train/Test (DRIAMS-A) 
 ################################################################################
 
-X_train, X_test, y_train, y_test = train_test_split(
+X_train, _, y_train, _ = train_test_split(
     dataA,
     labelA,
-    test_size=0.2,
-    shuffle=True,
-    stratify=labelA,
-    random_state=42
-)
-
+    train_size=0.5, 
+    stratify=labelA
+    )
 
 ################################################################################
 ## Model Definition
@@ -115,7 +112,7 @@ X_train, X_test, y_train, y_test = train_test_split(
 pipe_logistic = Pipeline([
     ('scaler', StandardScaler()),
     ('pca', PCA(n_components=816)),
-    ('lr', LogisticRegression(solver='liblinear', max_iter=1000))
+    ('lr', LogisticRegression(max_iter=1000))
 ])
 
 # Define the hyperparameter grid

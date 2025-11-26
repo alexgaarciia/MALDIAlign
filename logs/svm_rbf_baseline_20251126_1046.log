@@ -1,0 +1,8 @@
+=== RBF SVM Baseline Run ===
+Timestamp: 20251126_1046
+Starting grid search...
+Fitting 5 folds for each of 100 candidates, totalling 500 fits
+
+=== Grid Search Finished ===
+Best parameters: {'svm__C': np.float64(10.0), 'svm__gamma': np.float64(1.6666666666666668e-07)}
+Best balanced accuracy (CV): 0.9982567712207251
