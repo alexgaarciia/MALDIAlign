@@ -1,8 +1,0 @@
-=== Linear SVM Baseline Run ===
-Timestamp: 20251126_1033
-Starting grid search...
-Fitting 5 folds for each of 10 candidates, totalling 50 fits
-
-=== Grid Search Finished ===
-Best parameters: {'svm__C': np.float64(0.001)}
-Best balanced accuracy (CV): 0.9980091639437951

@@ -1,8 +1,0 @@
-=== Logistic Regression Baseline Run ===
-Timestamp: 20251126_1854
-Starting grid search...
-Fitting 5 folds for each of 10 candidates, totalling 50 fits
-
-=== Grid Search Finished ===
-Best parameters: {'lr__C': np.float64(0.021544346900318832)}
-Best balanced accuracy (CV): 0.9980463816256201

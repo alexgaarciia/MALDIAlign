@@ -39,7 +39,7 @@ from datetime import datetime
 from utils.load_config import load_config
 from utils.load_data import load_pkl
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
@@ -92,17 +92,14 @@ dataB, labelB, metaB = filtered_data["DRIAMS_B"]["data"], filtered_data["DRIAMS_
 dataC, labelC, metaC = filtered_data["DRIAMS_C"]["data"], filtered_data["DRIAMS_C"]["label"], filtered_data["DRIAMS_C"]["meta"]
 dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_D"]["label"], filtered_data["DRIAMS_D"]["meta"]
 
-
-################################################################################
-# Split Train/Test (DRIAMS-A) 
-################################################################################
-
-X_train, _, y_train, _ = train_test_split(
+dataA_sub, _, labelA_sub, _ = train_test_split(
     dataA,
     labelA,
-    train_size=0.5, 
-    stratify=labelA
-    )
+    train_size=0.5,
+    stratify=labelA,
+    shuffle=True
+)
+
 
 ################################################################################
 ## Model Definition
@@ -110,22 +107,27 @@ X_train, _, y_train, _ = train_test_split(
 
 # Define the pipeline
 pipe_logistic = Pipeline([
-    ('scaler', StandardScaler()),
-    ('pca', PCA(n_components=816)),
-    ('lr', LogisticRegression(max_iter=1000))
+    ("scaler", StandardScaler()),
+    ("pca", PCA(n_components=300)),  
+    ("lr", LogisticRegression(
+        penalty="l2",
+        solver="saga",
+        max_iter=2000,
+        n_jobs=-1,
+    ))
 ])
 
 # Define the hyperparameter grid
 param_grid = {
-    'lr__C': np.logspace(-3, 3, 10),
+    "lr__C": [0.1, 1, 10, 100],
 }
 
 # Train 
 grid_logistic = GridSearchCV(
     estimator=pipe_logistic,
     param_grid=param_grid,
-    cv=5,
     scoring='balanced_accuracy',
+    cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=42),
     n_jobs=-1,
     verbose=1
 )
@@ -137,8 +139,8 @@ print(f"=== Logistic Regression Baseline Run ===")
 print(f"Timestamp: {timestamp}")
 print("Starting grid search...")
 
-grid_logistic.fit(X_train, y_train)
+grid_logistic.fit(dataA_sub, labelA_sub)
 
 print("\n=== Grid Search Finished ===")
-print("Best parameters:", grid_logistic.best_params_)
-print("Best balanced accuracy (CV):", grid_logistic.best_score_)
+print("Best params:", grid_logistic.best_params_)
+print("Balanced Acc (CV):", grid_logistic.best_score_)

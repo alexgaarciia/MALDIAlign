@@ -39,10 +39,10 @@ from datetime import datetime
 from utils.load_config import load_config
 from utils.load_data import load_pkl
 
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.svm import SVC
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
+from sklearn.svm import LinearSVC
 
 
 ################################################################################
@@ -89,50 +89,38 @@ dataB, labelB, metaB = filtered_data["DRIAMS_B"]["data"], filtered_data["DRIAMS_
 dataC, labelC, metaC = filtered_data["DRIAMS_C"]["data"], filtered_data["DRIAMS_C"]["label"], filtered_data["DRIAMS_C"]["meta"]
 dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_D"]["label"], filtered_data["DRIAMS_D"]["meta"]
 
-# Select only 20% of DRIAMS-A because of computational cost
 dataA_sub, _, labelA_sub, _ = train_test_split(
     dataA,
     labelA,
-    train_size=0.2,
+    train_size=0.5,
     stratify=labelA,
-    random_state=42
+    shuffle=True
 )
 
-
-################################################################################
-# Split Train/Test (DRIAMS-A Subset) 
-################################################################################
-
-X_train, _, y_train, _ = train_test_split(
-    dataA_sub,
-    labelA_sub,
-    test_size=0.2,   
-    stratify=labelA_sub,
-    shuffle=True,
-    random_state=42
-)
 
 ################################################################################
 ## Model Definition
 ################################################################################
 
 # Define the pipeline
-pipe_svc_linear = Pipeline([
-    ('scaler', StandardScaler()),
-    ('svm', SVC(kernel='linear', class_weight='balanced'))
+pipe_svm = Pipeline([
+    ("scaler", StandardScaler()),
+    ("svm", LinearSVC(
+        class_weight="balanced"
+    ))
 ])
 
 # Define the hyperparameter grid
-param_grid_svc_linear = {
+param_grid_svm = {
     'svm__C': np.logspace(-3, 3, 10)
 }
 
 # Train 
-grid_svc_linear = GridSearchCV(
-    estimator=pipe_svc_linear,
-    param_grid=param_grid_svc_linear,
-    cv=5,
-    scoring='balanced_accuracy',
+grid_svm = GridSearchCV(
+    estimator=pipe_svm,
+    param_grid=param_grid_svm,
+    scoring="balanced_accuracy",
+    cv=StratifiedKFold(n_splits=3, shuffle=True, random_state=42),
     n_jobs=-1,
     verbose=1
 )
@@ -144,8 +132,8 @@ print("=== Linear SVM Baseline Run ===")
 print(f"Timestamp: {timestamp}")
 print("Starting grid search...")
 
-grid_svc_linear.fit(X_train, y_train)
+grid_svm.fit(dataA_sub, labelA_sub)
 
 print("\n=== Grid Search Finished ===")
-print("Best parameters:", grid_svc_linear.best_params_)
-print("Best balanced accuracy (CV):", grid_svc_linear.best_score_)
+print("Best parameters:", grid_svm.best_params_)
+print("Best Balanced Accuracy (CV):", grid_svm.best_score_)

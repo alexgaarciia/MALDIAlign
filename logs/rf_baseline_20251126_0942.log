@@ -1,8 +1,0 @@
-=== Random Forest Baseline Run ===
-Timestamp: 20251126_0942
-Starting grid search...
-Fitting 5 folds for each of 24 candidates, totalling 120 fits
-
-=== Grid Search Finished ===
-Best parameters: {'rf__bootstrap': False, 'rf__criterion': 'entropy', 'rf__max_features': 'log2', 'rf__n_estimators': 100}
-Best balanced accuracy (CV): 0.9987553845722748

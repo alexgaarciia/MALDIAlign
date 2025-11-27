@@ -39,7 +39,7 @@ from datetime import datetime
 from utils.load_config import load_config
 from utils.load_data import load_pkl
 
-from sklearn.model_selection import train_test_split, GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.pipeline import Pipeline
 
@@ -88,18 +88,12 @@ dataB, labelB, metaB = filtered_data["DRIAMS_B"]["data"], filtered_data["DRIAMS_
 dataC, labelC, metaC = filtered_data["DRIAMS_C"]["data"], filtered_data["DRIAMS_C"]["label"], filtered_data["DRIAMS_C"]["meta"]
 dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_D"]["label"], filtered_data["DRIAMS_D"]["meta"]
 
-
-################################################################################
-# Split Train/Test (DRIAMS-A) 
-################################################################################
-
-X_train, X_test, y_train, y_test = train_test_split(
+dataA_sub, _, labelA_sub, _ = train_test_split(
     dataA,
     labelA,
-    test_size=0.2,
-    shuffle=True,
+    train_size=0.5,
     stratify=labelA,
-    random_state=42
+    shuffle=True
 )
 
 
@@ -109,16 +103,17 @@ X_train, X_test, y_train, y_test = train_test_split(
 
 # Define the pipeline
 pipe_rf = Pipeline([
-    ('rf', RandomForestClassifier(class_weight='balanced'))
+    ("rf", RandomForestClassifier(
+        class_weight="balanced_subsample", 
+        n_jobs=-1,
+    ))
 ])
 
 # Define the hyperparameter grid
 param_grid_rf = [
     {
-        'rf__criterion': ['gini', 'entropy'],
-        'rf__bootstrap': [True, False],
-        'rf__n_estimators': [50, 100, 200],
-        'rf__max_features': ['sqrt', 'log2']
+        "rf__max_depth": [None, 20, 40],
+        "rf__n_estimators": [200, 400, 800],
     }
 ]
 
@@ -126,8 +121,8 @@ param_grid_rf = [
 grid_rf = GridSearchCV(
     estimator=pipe_rf,
     param_grid=param_grid_rf,
-    cv=5,
-    scoring='balanced_accuracy',
+    cv = StratifiedKFold(n_splits=3, shuffle=True, random_state=42),
+    scoring="balanced_accuracy",
     n_jobs=-1,
     verbose=1
 )
@@ -139,8 +134,8 @@ print("=== Random Forest Baseline Run ===")
 print(f"Timestamp: {timestamp}")
 print("Starting grid search...")
 
-grid_rf.fit(X_train, y_train)
+grid_rf.fit(dataA_sub, labelA_sub)
 
 print("\n=== Grid Search Finished ===")
 print("Best parameters:", grid_rf.best_params_)
-print("Best balanced accuracy (CV):", grid_rf.best_score_)
+print("Best Balanced Accuracy (CV):", grid_rf.best_score_)
