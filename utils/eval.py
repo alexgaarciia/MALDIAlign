@@ -14,8 +14,8 @@ def eval_model(model, dataloader, device, use_domain=False):
         for batch in dataloader:
             if use_domain:
                 x, domain = batch
-                x, domain = x.to(device), domain.to(device)
-                mu, logvar = model.encoder(x, domain)
+                x, c = x.to(device), torch.eye(2)[domain].float().to(device)
+                mu, logvar = model.encoder(x, c)
             else:
                 x, _ = batch
                 x = x.to(device)
