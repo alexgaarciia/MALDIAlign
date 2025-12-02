@@ -3,6 +3,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 
+
 def plot_model_metrics(model, model_name):
     """
     Plot training and validation losses for a VAE-like model.
@@ -44,42 +45,52 @@ def plot_model_metrics(model, model_name):
     plt.show()
 
 
-def compute_tsne_df(mus, labels, metadata):
+def compute_tsne_df(X, labels, metadata):
     """
-    Compute global t-SNE embeddings for all samples.
+    Compute global t-SNE embeddings for given samples.
     """
     tsne = TSNE(n_components=2, random_state=42)
-    Z_all = tsne.fit_transform(mus)
+    data_tsne = tsne.fit_transform(X)
 
     tsne_df = pd.DataFrame({
-        "x": Z_all[:, 0],
-        "y": Z_all[:, 1],
+        "x": data_tsne[:, 0],
+        "y": data_tsne[:, 1],
         "species": labels,
+        "year": metadata["year"].values, 
         "hospital": metadata["hospital"].values
     })
+
     return tsne_df
 
 
-def plot_tsne_global(tsne_df, per_species=False):
+def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, save=False, path=None):
     """
     Plot t-SNE embeddings globally (colored by species)
     or per species (colored by hospital).
     """
-    if not per_species:
+
+    # ----------- 1) GLOBAL VIEW (colored by species) -----------
+    if not per_species and not overlay_per_hospital:
         plt.figure(figsize=(8, 6))
         for sp in sorted(tsne_df["species"].unique()):
             subset = tsne_df[tsne_df["species"] == sp]
-            plt.scatter(subset["x"], subset["y"], s=12, alpha=0.35, label=sp)
+            plt.scatter(subset["x"], subset["y"], s=10, alpha=0.25, label=sp)
 
         plt.title("t-SNE (colored by species)")
         plt.xlabel("t-SNE 1")
         plt.ylabel("t-SNE 2")
         plt.legend(title="Species", markerscale=2, loc="upper left",
-                   frameon=True, fontsize=8, title_fontsize=9)
+                frameon=True, fontsize=8, title_fontsize=9)
         plt.tight_layout()
-        plt.show()
 
-    else:
+        if save and path:
+            plt.savefig(path)
+            plt.close()
+        else:
+            plt.show()
+
+    # ----------- 2) PER SPECIES (colored by hospital) -----------
+    elif per_species and not overlay_per_hospital:
         fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
         axes = axes.flatten()
 
@@ -87,16 +98,56 @@ def plot_tsne_global(tsne_df, per_species=False):
             subset = tsne_df[tsne_df["species"] == sp]
             for hosp in tsne_df["hospital"].unique():
                 sub_h = subset[subset["hospital"] == hosp]
-                axes[i].scatter(sub_h["x"], sub_h["y"], s=12, alpha=0.5,
+                axes[i].scatter(sub_h["x"], sub_h["y"], s=10, alpha=0.25,
                                 label=hosp if i == 0 else None)
             axes[i].set_title(sp.replace("_", " "), fontsize=15)
             axes[i].set_xticks([]); axes[i].set_yticks([])
 
         axes[0].legend(title="Hospital", loc="upper left",
-                       frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
+                    frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
         plt.suptitle("t-SNE embeddings per species (colored by hospital)", fontsize=18)
         plt.tight_layout(rect=[0, 0, 1, 0.95])
-        plt.show()
+
+        if save and path:
+            plt.savefig(path)
+            plt.close()
+        else:
+            plt.show()
+
+    # ----------- 3) PER SPECIES OVERLAY PER HOSPITAL -----------
+    elif overlay_per_hospital:
+        hospitals = sorted(tsne_df["hospital"].unique())
+
+        for hosp_focus in hospitals:
+            fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
+            axes = axes.flatten()
+
+            for i, sp in enumerate(sorted(tsne_df["species"].unique())):
+                subset = tsne_df[tsne_df["species"] == sp]
+                
+                # background = all other hospitals
+                background = subset[subset["hospital"] != hosp_focus]
+                focus = subset[subset["hospital"] == hosp_focus]
+
+                # plot background faintly
+                axes[i].scatter(background["x"], background["y"], s=8, alpha=0.1, color="gray")
+
+                # highlight focus hospital
+                axes[i].scatter(focus["x"], focus["y"], s=12, alpha=0.5, color="red", label=hosp_focus)
+
+                axes[i].set_title(sp.replace("_", " "), fontsize=15)
+                axes[i].set_xticks([]); axes[i].set_yticks([])
+
+            axes[0].legend(loc="upper left", fontsize=12, frameon=True)
+            plt.suptitle(f"t-SNE per species — Highlighting {hosp_focus}", fontsize=18)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+            if save and path:
+                hosp_path = path.replace(".png", f"_{hosp_focus}.png")
+                plt.savefig(hosp_path)
+                plt.close()
+            else:
+                plt.show()
 
 
 def compute_tsne_per_species(mus, labels, metadata):
@@ -124,7 +175,7 @@ def compute_tsne_per_species(mus, labels, metadata):
     return df_all, tsne_results
 
 
-def plot_tsne_species(df_all, tsne_results):
+def plot_tsne_species(df_all, tsne_results, save=False, path=None):
     """
     Plot t-SNE embeddings computed independently for each species.
     """
@@ -150,4 +201,9 @@ def plot_tsne_species(df_all, tsne_results):
     plt.suptitle("Independent t-SNE embeddings per species (colored by hospital)",
                  fontsize=18)
     plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.show()
+
+    if save and path:
+        plt.savefig(path)
+        plt.close()
+    else:
+        plt.show()
