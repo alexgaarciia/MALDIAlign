@@ -150,23 +150,27 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, sav
                 plt.show()
 
 
-def compute_tsne_per_species(mus, labels, metadata):
-    """
-    Compute independent t-SNEs per species.
-    """
+def compute_tsne_per_species(X, labels, metadata, prefix="z"):
+    # Build dataframe
     df_all = pd.DataFrame({
         "species": labels,
+        "year": metadata["year"].values,
         "hospital": metadata["hospital"].values
     })
-    for d in range(mus.shape[1]):
-        df_all[f"z{d}"] = mus[:, d]
 
+    # Add feature columns generically
+    for d in range(X.shape[1]):
+        df_all[f"{prefix}{d}"] = X[:, d]
+
+    # Compute t-SNE per species
     tsne_results = {}
     for sp in sorted(np.unique(labels)):
         mask = (df_all["species"] == sp)
-        X_sp = mus[mask]
+        X_sp = X[mask]
+
         tsne = TSNE(n_components=2, random_state=42)
         X_tsne = tsne.fit_transform(X_sp)
+
         tsne_results[sp] = {
             "embedding": X_tsne,
             "hospital": df_all.loc[mask, "hospital"].values
@@ -175,35 +179,82 @@ def compute_tsne_per_species(mus, labels, metadata):
     return df_all, tsne_results
 
 
-def plot_tsne_species(df_all, tsne_results, save=False, path=None):
+
+def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=False, path=None):
     """
     Plot t-SNE embeddings computed independently for each species.
+    If overlay=True, also creates one plot per hospital highlighting its samples.
     """
+    import os
+    import matplotlib.pyplot as plt
+
     species_sorted = sorted(tsne_results.keys())
     n_species = len(species_sorted)
     n_rows = (n_species + 2) // 3 
-    fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
-                             sharex=True, sharey=True)
-    axes = axes.flatten()
+    hospitals_sorted = sorted(df_all["hospital"].unique())
 
-    for i, sp in enumerate(species_sorted):
-        emb = tsne_results[sp]["embedding"]
-        hosp = tsne_results[sp]["hospital"]
-        for h in sorted(df_all["hospital"].unique()):
-            idx = (hosp == h)
-            axes[i].scatter(emb[idx, 0], emb[idx, 1], s=12, alpha=0.45,
-                            label=h if i == 0 else None)
-        axes[i].set_title(sp.replace("_", " "), fontsize=15)
-        axes[i].set_xticks([]); axes[i].set_yticks([])
+    # --- Plot per species (as before) ---
+    if not overlay_per_hospital:
+      fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
+                              sharex=True, sharey=True)
+      axes = axes.flatten()
 
-    axes[0].legend(title="Hospital", loc="upper left",
-                   frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
-    plt.suptitle("Independent t-SNE embeddings per species (colored by hospital)",
-                 fontsize=18)
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
+      for i, sp in enumerate(species_sorted):
+          emb = tsne_results[sp]["embedding"]
+          hosp = tsne_results[sp]["hospital"]
+          for h in hospitals_sorted:
+              idx = (hosp == h)
+              axes[i].scatter(emb[idx, 0], emb[idx, 1], s=12, alpha=0.45,
+                              label=h if i == 0 else None)
+          axes[i].set_title(sp.replace("_", " "), fontsize=15)
+          axes[i].set_xticks([]); axes[i].set_yticks([])
 
-    if save and path:
-        plt.savefig(path)
-        plt.close()
+      axes[0].legend(title="Hospital", loc="upper left",
+                    frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
+      plt.suptitle("Independent t-SNE embeddings per species (colored by hospital)",
+                  fontsize=18)
+      plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+      if save and path:
+          plt.savefig(path)
+          plt.close()
+      else:
+          plt.show()
+
+    # --- Overlay plots (one per hospital) ---
     else:
-        plt.show()
+        for h_focus in hospitals_sorted:
+            fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
+                                     sharex=True, sharey=True)
+            axes = axes.flatten()
+            for i, sp in enumerate(species_sorted):
+                emb = tsne_results[sp]["embedding"]
+                hosp = tsne_results[sp]["hospital"]
+                idx_focus = (hosp == h_focus)
+                idx_other = ~idx_focus
+
+                # Background (other hospitals)
+                axes[i].scatter(
+                    emb[idx_other, 0], emb[idx_other, 1],
+                    s=10, alpha=0.1, color="gray"
+                )
+                # Focus hospital (highlighted)
+                axes[i].scatter(
+                    emb[idx_focus, 0], emb[idx_focus, 1],
+                    s=14, alpha=0.7, label=h_focus, color="red"
+                )
+
+                axes[i].set_title(sp.replace("_", " "), fontsize=15)
+                axes[i].set_xticks([]); axes[i].set_yticks([])
+
+            axes[0].legend(title="Hospital", loc="upper left",
+                           frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
+            plt.suptitle(f"{h_focus} overlay across species", fontsize=18)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+            if save and path:
+                hosp_path = path.replace(".png", f"_{h_focus}.png")
+                plt.savefig(hosp_path)
+                plt.close()
+            else:
+                plt.show()

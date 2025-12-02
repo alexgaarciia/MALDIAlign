@@ -35,7 +35,7 @@ from sklearn.decomposition import PCA
 
 from utils.load_config import load_config
 from utils.load_data import load_pkl
-from utils.viz import compute_tsne_df, plot_tsne_global
+from utils.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_species, plot_tsne_species
 
 
 
@@ -91,10 +91,13 @@ data_norm_pca = PCA(n_components=100).fit_transform(data_norm)
 
 print("====== Computing t-SNE... ======", "\n")
 tsne_df = compute_tsne_df(data_norm_pca, label_final, meta_final)
+df_all, tsne_results = compute_tsne_per_species(data_norm_pca, label_final, meta_final, prefix="f")
 
 print("====== Saving plots... ======", "\n")
 plot_tsne_global(tsne_df, per_species=False, save=True, path='01_exploration/output_plots/driams_reduced_tsne_global.png')
-plot_tsne_global(tsne_df, per_species=True, save=True, path='01_exploration/output_plots/driams_reduced_tsne_species.png')
-plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='01_exploration/output_plots/driams_reduced_tsne_species_overlay.png')
+plot_tsne_global(tsne_df, per_species=True, save=True, path='01_exploration/output_plots/driams_reduced_tsne_global_species.png')
+plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='01_exploration/output_plots/driams_reduced_tsne_global_species_overlay.png')
+plot_tsne_species(df_all, tsne_results, save=True, path='01_exploration/output_plots/driams_reduced_tsne_species.png')
+plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path='01_exploration/output_plots/driams_reduced_tsne_species_overlay.png')
 
 print("====== Done! ======")
