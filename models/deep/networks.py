@@ -6,15 +6,9 @@ class Encoder(nn.Module):
     def __init__(self, input_dim, latent_dim):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(input_dim, 2048),
-            nn.LeakyReLU(),
-            nn.Linear(2048, 1028),
-            nn.LeakyReLU(),
-            nn.Linear(1028, 512),
-            nn.LeakyReLU(),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(),
+            nn.Linear(input_dim, 1024), nn.ReLU(), nn.Linear(1024, 256), nn.ReLU()
         )
+
         self.mu = nn.Linear(256, latent_dim)
         self.logvar = nn.Linear(256, latent_dim)
 
@@ -35,14 +29,10 @@ class Decoder(nn.Module):
             [
                 nn.Sequential(
                     nn.Linear(latent_dim, 256),
-                    nn.LeakyReLU(),
-                    nn.Linear(256, 512),
-                    nn.LeakyReLU(),
-                    nn.Linear(512, 1024),
-                    nn.LeakyReLU(),
-                    nn.Linear(1024, 2048),
-                    nn.LeakyReLU(),
-                    nn.Linear(2048, output_dim),
+                    nn.ReLU(),
+                    nn.Linear(256, 1024),
+                    nn.ReLU(),
+                    nn.Linear(1024, output_dim),
                 )
                 for _ in range(num_domains)
             ]

@@ -13,12 +13,12 @@ sys.path.append(project_root)
 # ---------------------------
 import pickle
 import torch
+from torch.utils.data import TensorDataset, DataLoader
 from models.deep.VAE import VAE_Extended
 from utils.load_config import load_config
-from utils.load_data import load_driams, map_domains, scale_data, construct_dataloaders
+from utils.load_data import load_driams, map_domains, minmax_spectrum, construct_dataloaders
 from utils.viz import *
 from utils.eval import eval_model
-
 from sklearn.model_selection import train_test_split
 
 
@@ -36,6 +36,7 @@ def main():
     # ---------------------------
     # Data preparation
     # ---------------------------
+    print("===== Loading and preparing data... =====")
     cfg = load_config()
     driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL"]
     driams_filtered= load_driams(driams_pkl, filter=["DRIAMS_A", "DRIAMS_D"])
@@ -82,21 +83,25 @@ def main():
     # ---------------------------
     # Model
     # ---------------------------
-    model = VAE_Extended(X_train.shape[1], latent_dim=64, epochs=200, annealing_epochs=100, patience=10)
+    print("===== Instantiating model.. =====")
+    model = VAE_Extended(X_train.shape[1], latent_dim=64, epochs=200, annealing_epochs=100, patience=40)
 
+    print("===== Training model... =====")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.trainloop(train_loader, val_loader, device=device)
 
     # ---------------------------
     # Store results
     # ---------------------------
+    print("===== Finished training, saving model and metrics... =====")
     torch.save(model.state_dict(), os.path.join(results_dir, "vae.pth"))
     plot_model_metrics(model, "VAE", save=True, path=results_dir+"/vae_loss")
 
     # ---------------------------
     # t-SNEs
     # ---------------------------
-    X_all = scaler.transform(data_final)
+    print("===== Computing t-SNEs... =====")
+    X_all = minmax_spectrum(data_final)
     X_all_tensor = torch.tensor(X_all, dtype=torch.float32)
     domain_all_tensor = torch.tensor(domain_ids, dtype=torch.long)
 
@@ -114,3 +119,6 @@ def main():
     df_all, tsne_results = compute_tsne_per_species(mus_all, label_final, meta_final)
     plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=True, path=results_dir + "/vae_tsne_species.png")
     plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path=results_dir + "/vae_tsne_species_overlay.png")
+
+if __name__=="__main__":
+    main()
