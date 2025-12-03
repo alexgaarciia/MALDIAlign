@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 
 
-def plot_model_metrics(model, model_name):
+def plot_model_metrics(model, model_name, save=False, path=None):
     """
     Plot training and validation losses for a VAE-like model.
     """
@@ -29,7 +29,12 @@ def plot_model_metrics(model, model_name):
     plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
+
+    if save and path:
+        plt.savefig(path + "_train.png")
+        plt.close()
+    else:
+        plt.show()
 
     # Validation
     plt.figure(figsize=(10, 6))
@@ -42,8 +47,12 @@ def plot_model_metrics(model, model_name):
     plt.legend()
     plt.grid(alpha=0.3)
     plt.tight_layout()
-    plt.show()
-
+    if save and path:
+        plt.savefig(path + "_val.png")
+        plt.close()
+    else:
+        plt.show()
+        
 
 def compute_tsne_df(X, labels, metadata):
     """
@@ -177,7 +186,6 @@ def compute_tsne_per_species(X, labels, metadata, prefix="z"):
         }
 
     return df_all, tsne_results
-
 
 
 def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=False, path=None):
