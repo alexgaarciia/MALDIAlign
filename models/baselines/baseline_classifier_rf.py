@@ -93,7 +93,8 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
     labelA,
     train_size=0.5,
     stratify=labelA,
-    shuffle=True
+    shuffle=True,
+    random_state=42
 )
 
 
@@ -106,6 +107,7 @@ pipe_rf = Pipeline([
     ("rf", RandomForestClassifier(
         class_weight="balanced_subsample", 
         n_jobs=-1,
+        random_state=42
     ))
 ])
 

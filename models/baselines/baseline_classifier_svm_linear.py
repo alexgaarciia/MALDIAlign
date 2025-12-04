@@ -94,7 +94,8 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
     labelA,
     train_size=0.5,
     stratify=labelA,
-    shuffle=True
+    shuffle=True,
+    random_state=42
 )
 
 
@@ -106,7 +107,8 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
 pipe_svm = Pipeline([
     ("scaler", StandardScaler()),
     ("svm", LinearSVC(
-        class_weight="balanced"
+        class_weight="balanced",
+        random_state=42
     ))
 ])
 

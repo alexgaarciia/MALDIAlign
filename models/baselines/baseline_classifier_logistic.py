@@ -97,7 +97,8 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
     labelA,
     train_size=0.5,
     stratify=labelA,
-    shuffle=True
+    shuffle=True,
+    random_state=42
 )
 
 
@@ -108,12 +109,13 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
 # Define the pipeline
 pipe_logistic = Pipeline([
     ("scaler", StandardScaler()),
-    ("pca", PCA(n_components=300)),  
+    ("pca", PCA(n_components=300, random_state=42)),  
     ("lr", LogisticRegression(
         penalty="l2",
         solver="saga",
         max_iter=2000,
         n_jobs=-1,
+        random_state=42
     ))
 ])
 
