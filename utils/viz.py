@@ -105,7 +105,7 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, sav
 
         for i, sp in enumerate(sorted(tsne_df["species"].unique())):
             subset = tsne_df[tsne_df["species"] == sp]
-            for hosp in tsne_df["hospital"].unique():
+            for hosp in sorted(tsne_df["hospital"].unique()):
                 sub_h = subset[subset["hospital"] == hosp]
                 axes[i].scatter(sub_h["x"], sub_h["y"], s=10, alpha=0.25,
                                 label=hosp if i == 0 else None)
