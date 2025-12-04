@@ -45,8 +45,8 @@ def print_metrics(metrics):
     plt.yticks(fontsize=8)
 
     plt.title(f"Confusion Matrix — {domain}", fontsize=12)
-    plt.xlabel("Predicted Label")
-    plt.ylabel("True Label")
+    plt.xlabel("") 
+    plt.ylabel("")  
     plt.tight_layout()
     plt.show()
     
