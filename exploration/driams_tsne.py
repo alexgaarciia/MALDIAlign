@@ -24,19 +24,26 @@ sys.path.append(str(target))
 print("Working directory:", os.getcwd())
 
 
-
 #################################
 # Imports
 #################################
-import numpy as np
 import pandas as pd
 
 from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler
 
 from utils.load_config import load_config
 from utils.load_data import load_pkl
 from utils.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_species, plot_tsne_species
 
+
+#################################
+# Configurable options
+#################################
+
+# Which hospitals to include (None = all)
+HOSPITALS_TO_INCLUDE = None
+#HOSPITALS_TO_INCLUDE = ["DRIAMS_A", "DRIAMS_D"]   # or None for all
 
 
 #################################
@@ -49,40 +56,28 @@ driams = load_pkl(driams_pkl)
 data, label, meta = driams["data"], driams["label"], driams["meta"]
 meta = pd.DataFrame.from_records(list(meta))
 
-filtered_data = {}
-for hosp in meta["hospital"].unique():
-    idx = np.where(meta["hospital"].values == hosp)[0]
-    filtered_data[hosp] = {
-        "data": data[idx],
-        "label": label[idx],
-        "meta": meta.iloc[idx]
-    }
+# Filter hospitals if requested
+if HOSPITALS_TO_INCLUDE is not None:
+    selected_idx = meta["hospital"].isin(HOSPITALS_TO_INCLUDE).values
+    data = data[selected_idx]
+    label = label[selected_idx]
+    meta = meta.iloc[selected_idx].reset_index(drop=True)
 
-# Individual hospital datasets
-dataA, labelA, metaA = filtered_data["DRIAMS_A"]["data"], filtered_data["DRIAMS_A"]["label"], filtered_data["DRIAMS_A"]["meta"]
-dataB, labelB, metaB = filtered_data["DRIAMS_B"]["data"], filtered_data["DRIAMS_B"]["label"], filtered_data["DRIAMS_B"]["meta"]
-dataC, labelC, metaC = filtered_data["DRIAMS_C"]["data"], filtered_data["DRIAMS_C"]["label"], filtered_data["DRIAMS_C"]["meta"]
-dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_D"]["label"], filtered_data["DRIAMS_D"]["meta"]
-
-# Concatenate data and labels
-data_final = np.vstack([dataA, dataD])
-label_final = np.concatenate([labelA, labelD])
-meta_final  = pd.concat([metaA, metaD], ignore_index=True)
-
+print(f"Selected hospitals: {HOSPITALS_TO_INCLUDE if HOSPITALS_TO_INCLUDE else 'ALL'}")
+print(f"Data shape: {data.shape}")
 
 
 #################################
 # PCA
 #################################
 
-# Normalize each spectrum
-data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (
-    data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8)
+print("====== Computing PCA... ======\n")
 
-# PCA
-print("====== Computing PCA... ======", "\n")
-data_norm_pca = PCA(n_components=100).fit_transform(data_norm)
+scaler = StandardScaler()
+data_scaled = scaler.fit_transform(data)
 
+pca = PCA(n_components=100)
+data_pca = pca.fit_transform(data_scaled)
 
 
 #################################
@@ -90,14 +85,14 @@ data_norm_pca = PCA(n_components=100).fit_transform(data_norm)
 #################################
 
 print("====== Computing t-SNE... ======", "\n")
-tsne_df = compute_tsne_df(data_norm_pca, label_final, meta_final)
-df_all, tsne_results = compute_tsne_per_species(data_norm_pca, label_final, meta_final, prefix="f")
+tsne_df = compute_tsne_df(data_pca, label, meta)
+df_all, tsne_results = compute_tsne_per_species(data_pca, label, meta, prefix="f")
 
 print("====== Saving plots... ======", "\n")
-plot_tsne_global(tsne_df, per_species=False, save=True, path='exploration/output_plots/driams_reduced_tsne_global.png')
-plot_tsne_global(tsne_df, per_species=True, save=True, path='exploration/output_plots/driams_reduced_tsne_global_species.png')
-plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='exploration/output_plots/driams_reduced_tsne_global_species_overlay.png')
-plot_tsne_species(df_all, tsne_results, save=True, path='exploration/output_plots/driams_reduced_tsne_species.png')
-plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path='exploration/output_plots/driams_reduced_tsne_species_overlay.png')
+plot_tsne_global(tsne_df, per_species=False, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global.png')
+plot_tsne_global(tsne_df, per_species=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global_species.png')
+plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global_species_overlay.png')
+plot_tsne_species(df_all, tsne_results, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_species.png')
+plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_species_overlay.png')
 
 print("====== Done! ======")
