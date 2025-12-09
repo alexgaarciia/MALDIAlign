@@ -42,8 +42,16 @@ from utils.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_specie
 #################################
 
 # Which hospitals to include (None = all)
-HOSPITALS_TO_INCLUDE = None
-#HOSPITALS_TO_INCLUDE = ["DRIAMS_A", "DRIAMS_D"]   # or None for all
+#HOSPITALS_TO_INCLUDE = None
+HOSPITALS_TO_INCLUDE = ["DRIAMS_A", "DRIAMS_D"]   # or None for all
+
+# Which species to include (None = all)
+#SPECIES_TO_INCLUDE = None
+SPECIES_TO_INCLUDE = [
+    "Escherichia_Coli",
+    "Klebsiella_Pneumoniae",
+    "Staphylococcus_Aureus"
+]
 
 
 #################################
@@ -63,8 +71,16 @@ if HOSPITALS_TO_INCLUDE is not None:
     label = label[selected_idx]
     meta = meta.iloc[selected_idx].reset_index(drop=True)
 
+# Filter species if requested
+if SPECIES_TO_INCLUDE is not None:
+    selected_idx = pd.Series(label).isin(SPECIES_TO_INCLUDE).values
+    data = data[selected_idx]
+    label = label[selected_idx]
+    meta = meta.iloc[selected_idx].reset_index(drop=True)
+
 print(f"Selected hospitals: {HOSPITALS_TO_INCLUDE if HOSPITALS_TO_INCLUDE else 'ALL'}")
-print(f"Data shape: {data.shape}")
+print(f"Selected species: {SPECIES_TO_INCLUDE if SPECIES_TO_INCLUDE else 'ALL'}")
+print(f"Data shape after filtering: {data.shape} \n")
 
 
 #################################
@@ -76,7 +92,7 @@ print("====== Computing PCA... ======\n")
 scaler = StandardScaler()
 data_scaled = scaler.fit_transform(data)
 
-pca = PCA(n_components=100)
+pca = PCA(n_components=50)
 data_pca = pca.fit_transform(data_scaled)
 
 
