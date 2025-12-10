@@ -72,18 +72,12 @@ class BernoulliDecoder(nn.Module):
 class ConditionalEncoder(nn.Module):
     def __init__(self, input_dim, latent_dim, cond_dim):
         super().__init__()
-
         self.net = nn.Sequential(
-            nn.Linear(input_dim + cond_dim, 2048),
-            nn.LeakyReLU(),
-            nn.Linear(2048, 1028),
-            nn.LeakyReLU(),
-            nn.Linear(1028, 512),
-            nn.LeakyReLU(),
-            nn.Linear(512, 256),
-            nn.LeakyReLU(),
+            nn.Linear(input_dim + cond_dim, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 256),
+            nn.ReLU(),
         )
-
         self.mu = nn.Linear(256, latent_dim)
         self.logvar = nn.Linear(256, latent_dim)
 
@@ -99,20 +93,27 @@ class ConditionalEncoder(nn.Module):
 class ConditionalDecoder(nn.Module):
     def __init__(self, latent_dim, output_dim, cond_dim):
         super().__init__()
-
         self.net = nn.Sequential(
             nn.Linear(latent_dim + cond_dim, 256),
-            nn.LeakyReLU(),
-            nn.Linear(256, 512),
-            nn.LeakyReLU(),
-            nn.Linear(512, 1024),
-            nn.LeakyReLU(),
-            nn.Linear(1024, 2048),
-            nn.LeakyReLU(),
-            nn.Linear(2048, output_dim),
+            nn.ReLU(),
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, output_dim),
+            nn.Sigmoid()  
         )
 
     def forward(self, z, c):
         h = torch.cat([z, c], dim=1)
-        x_recon = self.net(h)
-        return x_recon
+        return self.net(h)
+
+    def log_prob(self, x, z, c):
+        theta = self.forward(z, c)
+
+        if torch.any(theta < 0) or torch.any(theta > 1) or torch.isnan(theta).any():
+            raise ValueError(f"[ERROR] theta out of bounds: min={theta.min()}, max={theta.max()}")
+        if torch.any(x < 0) or torch.any(x > 1) or torch.isnan(x).any():
+            raise ValueError("Input x must be in [0,1] for Bernoulli log_prob computation.")
+        
+        log_prob = -F.binary_cross_entropy(theta, x, reduction="none").sum(dim=1)
+        return log_prob
+    
