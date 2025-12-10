@@ -1,5 +1,4 @@
 import pickle
-import torch
 import numpy as np
 import pandas as pd
 
@@ -172,7 +171,7 @@ def scale_data(X_train, X_val, prescaler=None):
     return scaler, X_train_scaled, X_val_scaled
 
 
-def construct_dataloaders(X_train_tensor, X_val_tensor, domain_train_tensor, domain_val_tensor, batch_size):
+def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_train_tensor, domain_val_tensor, domain_all_tensor, batch_size):
     """
     Build PyTorch DataLoaders for train and validation sets.
 
@@ -199,6 +198,7 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, domain_train_tensor, dom
     
     train_dataset = TensorDataset(X_train_tensor, domain_train_tensor)
     val_dataset   = TensorDataset(X_val_tensor, domain_val_tensor)
+    all_dataset = TensorDataset(X_all_tensor, domain_all_tensor)
 
     train_loader = DataLoader(
         train_dataset,
@@ -211,5 +211,10 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, domain_train_tensor, dom
         batch_size=batch_size,
         shuffle=False
     )
+    
+    all_loader  = DataLoader(
+        all_dataset, 
+        batch_size=256, 
+        shuffle=False)
 
-    return train_loader, val_loader
+    return train_loader, val_loader, all_loader
