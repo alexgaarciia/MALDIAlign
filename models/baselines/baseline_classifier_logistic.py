@@ -101,6 +101,11 @@ dataA_sub, _, labelA_sub, _ = train_test_split(
     random_state=42
 )
 
+# Apply normalization: scale each spectrum to [0, 1]
+X_min = dataA_sub.min(axis=1, keepdims=True)
+X_max = dataA_sub.max(axis=1, keepdims=True)
+dataA_sub_norm = (dataA_sub - X_min) / (X_max - X_min + 1e-8)
+
 
 ################################################################################
 ## Model Definition
@@ -141,7 +146,7 @@ print(f"=== Logistic Regression Baseline Run ===")
 print(f"Timestamp: {timestamp}")
 print("Starting grid search...")
 
-grid_logistic.fit(dataA_sub, labelA_sub)
+grid_logistic.fit(dataA_sub_norm, labelA_sub)
 
 print("\n=== Grid Search Finished ===")
 print("Best params:", grid_logistic.best_params_)
