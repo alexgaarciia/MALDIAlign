@@ -8,6 +8,7 @@ def plot_model_metrics(model, model_name, save=False, path=None):
     """
     Plot training and validation losses for a VAE-like model.
     """
+
     train_losses = [t[0] for t in model.loss_during_training]
     train_recon = [t[0] for t in model.reconstruc_during_training]
     train_kl = [t[0] for t in model.KL_during_training]
@@ -72,24 +73,35 @@ def compute_tsne_df(X, labels, metadata):
     return tsne_df
 
 
-def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, save=False, path=None):
+def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx=None, filters=None, save=False, path=None):
     """
     Plot t-SNE embeddings globally (colored by species)
     or per species (colored by hospital).
     """
 
+    df = tsne_df.copy()
+
+    # Apply filters if provided
+    if filters:
+        for key, vals in filters.items():
+            df = df[df[key].isin(vals)]
+
     # ----------- 1) GLOBAL VIEW (colored by species) -----------
     if not per_species and not overlay_per_hospital:
-        plt.figure(figsize=(8, 6))
-        for sp in sorted(tsne_df["species"].unique()):
-            subset = tsne_df[tsne_df["species"] == sp]
+        plt.figure(figsize=(12, 10))
+        for sp in sorted(df["species"].unique()):
+            subset = df[df["species"] == sp]
             plt.scatter(subset["x"], subset["y"], s=10, alpha=0.25, label=sp)
 
+        # Overlay misclassified points
+        if idx is not None and len(idx) > 0:
+            valid_idx = idx[idx < len(df)]  
+            plt.scatter(df.iloc[valid_idx]["x"], df.iloc[valid_idx]["y"], marker="x", s=45, color="purple", alpha=0.8, label="Misclassified")
+        
         plt.title("t-SNE (colored by species)")
         plt.xlabel("t-SNE 1")
         plt.ylabel("t-SNE 2")
-        plt.legend(title="Species", markerscale=2, loc="upper left",
-                frameon=True, fontsize=8, title_fontsize=9)
+        plt.legend(title="Species", markerscale=2, loc="upper left", frameon=True, fontsize=8, title_fontsize=9)
         plt.tight_layout()
 
         if save and path:
@@ -103,12 +115,29 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, sav
         fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
         axes = axes.flatten()
 
-        for i, sp in enumerate(sorted(tsne_df["species"].unique())):
-            subset = tsne_df[tsne_df["species"] == sp]
-            for hosp in sorted(tsne_df["hospital"].unique()):
+
+        for i, sp in enumerate(sorted(df["species"].unique())):
+            subset = df[df["species"] == sp]
+            for hosp in sorted(df["hospital"].unique()):
                 sub_h = subset[subset["hospital"] == hosp]
-                axes[i].scatter(sub_h["x"], sub_h["y"], s=10, alpha=0.25,
-                                label=hosp if i == 0 else None)
+                axes[i].scatter(
+                    sub_h["x"], sub_h["y"],
+                    s=10, alpha=0.25,
+                    label=hosp if i == 0 else None
+                )
+
+            # --- Overlay misclassified points for this species ---
+            if idx is not None and len(idx) > 0:
+                valid_idx = idx[idx < len(df)]
+                mis_points = df.iloc[valid_idx]
+                mis_sp = mis_points[mis_points["species"] == sp]
+
+                axes[i].scatter(
+                    mis_sp["x"], mis_sp["y"],
+                    marker="x", s=45, color="purple", alpha=0.8,
+                    label="Misclassified" if i == 0 else None
+                )
+
             axes[i].set_title(sp.replace("_", " "), fontsize=15)
             axes[i].set_xticks([]); axes[i].set_yticks([])
 
@@ -144,6 +173,18 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, sav
                 # highlight focus hospital
                 axes[i].scatter(focus["x"], focus["y"], s=12, alpha=0.5, color="red", label=hosp_focus)
 
+                if idx is not None and len(idx) > 0:
+                    valid_idx = idx[idx < len(df)] 
+                    mis_points = df.iloc[valid_idx]
+                    mis_sp = mis_points[mis_points["species"] == sp]
+                    mis_sp_focus = mis_sp[mis_sp["hospital"] == hosp_focus]
+
+                    axes[i].scatter(
+                        mis_sp_focus["x"], mis_sp_focus["y"],
+                        marker="x", s=45, color="purple", alpha=0.8,
+                        label="Misclassified" if i == 0 else None
+                    )
+
                 axes[i].set_title(sp.replace("_", " "), fontsize=15)
                 axes[i].set_xticks([]); axes[i].set_yticks([])
 
@@ -160,42 +201,47 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, sav
 
 
 def compute_tsne_per_species(X, labels, metadata, prefix="z"):
-    # Build dataframe
+    """
+    Compute independent t-SNE embeddings for each species.
+    Keeps track of global indices (mask) to maintain alignment with df_all.
+    """
+
     df_all = pd.DataFrame({
         "species": labels,
         "year": metadata["year"].values,
         "hospital": metadata["hospital"].values
     })
 
-    # Add feature columns generically
     for d in range(X.shape[1]):
         df_all[f"{prefix}{d}"] = X[:, d]
 
-    # Compute t-SNE per species
     tsne_results = {}
-    for sp in sorted(np.unique(labels)):
-        mask = (df_all["species"] == sp)
-        X_sp = X[mask]
 
+    for sp in sorted(np.unique(labels)):
+        mask = np.where(labels == sp)[0]        
+        X_sp = X[mask]
         tsne = TSNE(n_components=2, random_state=42)
         X_tsne = tsne.fit_transform(X_sp)
 
         tsne_results[sp] = {
             "embedding": X_tsne,
-            "hospital": df_all.loc[mask, "hospital"].values
+            "hospital": metadata["hospital"].values[mask],
+            "mask": mask,                      
         }
 
     return df_all, tsne_results
 
 
-def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=False, path=None):
+def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, idx=None, save=False, path=None):
     """
     Plot t-SNE embeddings computed independently for each species.
     If overlay=True, also creates one plot per hospital highlighting its samples.
+    Optionally overlays misclassified points (idx: global indices of misclassified samples).
     """
-    import os
-    import matplotlib.pyplot as plt
 
+    if idx is None:
+        idx = np.array([], dtype=int)
+        
     species_sorted = sorted(tsne_results.keys())
     n_species = len(species_sorted)
     n_rows = (n_species + 2) // 3 
@@ -203,31 +249,45 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=Fal
 
     # --- Plot per species (as before) ---
     if not overlay_per_hospital:
-      fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
-                              sharex=True, sharey=True)
-      axes = axes.flatten()
+        fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
+                                 sharex=True, sharey=True)
+        axes = axes.flatten()
 
-      for i, sp in enumerate(species_sorted):
-          emb = tsne_results[sp]["embedding"]
-          hosp = tsne_results[sp]["hospital"]
-          for h in hospitals_sorted:
-              idx = (hosp == h)
-              axes[i].scatter(emb[idx, 0], emb[idx, 1], s=12, alpha=0.45,
-                              label=h if i == 0 else None)
-          axes[i].set_title(sp.replace("_", " "), fontsize=15)
-          axes[i].set_xticks([]); axes[i].set_yticks([])
+        for i, sp in enumerate(species_sorted):
+            emb = tsne_results[sp]["embedding"]
+            hosp = tsne_results[sp]["hospital"]
+            mask_global = tsne_results[sp]["mask"] 
 
-      axes[0].legend(title="Hospital", loc="upper left",
-                    frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
-      plt.suptitle("Independent t-SNE embeddings per species (colored by hospital)",
-                  fontsize=18)
-      plt.tight_layout(rect=[0, 0, 1, 0.95])
+            # --- Plot by hospital ---
+            for h in hospitals_sorted:
+                mask_hosp = (hosp == h)
+                axes[i].scatter(emb[mask_hosp, 0], emb[mask_hosp, 1],
+                                s=12, alpha=0.45, label=h if i == 0 else None)
+              
+            # --- Overlay misclassified points (if provided) ---
+            if isinstance(idx, (list, np.ndarray)) and len(idx) > 0:
+                mis_mask = np.isin(mask_global, idx) 
+                if np.any(mis_mask):
+                    axes[i].scatter(
+                        emb[mis_mask, 0], emb[mis_mask, 1],
+                        marker="x", s=45, color="purple", alpha=0.8,
+                        label="Misclassified" if i == 0 else None
+                    )
 
-      if save and path:
-          plt.savefig(path)
-          plt.close()
-      else:
-          plt.show()
+            axes[i].set_title(sp.replace("_", " "), fontsize=15)
+            axes[i].set_xticks([]); axes[i].set_yticks([])
+
+        axes[0].legend(title="Hospital", loc="upper left",
+                       frameon=True, fontsize=12, title_fontsize=13, markerscale=2.0)
+        plt.suptitle("Independent t-SNE embeddings per species (colored by hospital)",
+                     fontsize=18)
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+        if save and path:
+            plt.savefig(path)
+            plt.close()
+        else:
+            plt.show()
 
     # --- Overlay plots (one per hospital) ---
     else:
@@ -235,22 +295,38 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=Fal
             fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
                                      sharex=True, sharey=True)
             axes = axes.flatten()
+
             for i, sp in enumerate(species_sorted):
                 emb = tsne_results[sp]["embedding"]
                 hosp = tsne_results[sp]["hospital"]
-                idx_focus = (hosp == h_focus)
-                idx_other = ~idx_focus
+                mask_global = tsne_results[sp]["mask"]
+
+                mask_focus = (hosp == h_focus)
+                mask_other = ~mask_focus
 
                 # Background (other hospitals)
                 axes[i].scatter(
-                    emb[idx_other, 0], emb[idx_other, 1],
+                    emb[mask_other, 0], emb[mask_other, 1],
                     s=10, alpha=0.1, color="gray"
                 )
+
                 # Focus hospital (highlighted)
                 axes[i].scatter(
-                    emb[idx_focus, 0], emb[idx_focus, 1],
+                    emb[mask_focus, 0], emb[mask_focus, 1],
                     s=14, alpha=0.7, label=h_focus, color="red"
                 )
+
+                # Overlay misclassified points for that hospital (using mask)
+                if isinstance(idx, (list, np.ndarray)) and len(idx) > 0:
+                    mis_mask = np.isin(mask_global, idx)
+                    if np.any(mis_mask):
+                        mis_mask_focus = np.logical_and(mis_mask, mask_focus)
+                        if np.any(mis_mask_focus):
+                            axes[i].scatter(
+                                emb[mis_mask_focus, 0], emb[mis_mask_focus, 1],
+                                marker="x", s=45, color="purple", alpha=0.8,
+                                label="Misclassified" if i == 0 else None
+                            )
 
                 axes[i].set_title(sp.replace("_", " "), fontsize=15)
                 axes[i].set_xticks([]); axes[i].set_yticks([])
