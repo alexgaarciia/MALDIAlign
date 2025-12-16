@@ -73,7 +73,7 @@ def compute_tsne_df(X, labels, metadata):
     return tsne_df
 
 
-def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx=None, filters=None, save=False, path=None):
+def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, overlay_per_year=False, idx=None, filters=None, save=False, path=None):
     """
     Plot t-SNE embeddings globally (colored by species)
     or per species (colored by hospital).
@@ -87,7 +87,7 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx
             df = df[df[key].isin(vals)]
 
     # ----------- 1) GLOBAL VIEW (colored by species) -----------
-    if not per_species and not overlay_per_hospital:
+    if not per_species and not overlay_per_hospital and not overlay_per_year:
         plt.figure(figsize=(12, 10))
         for sp in sorted(df["species"].unique()):
             subset = df[df["species"] == sp]
@@ -111,7 +111,7 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx
             plt.show()
 
     # ----------- 2) PER SPECIES (colored by hospital) -----------
-    elif per_species and not overlay_per_hospital:
+    elif per_species and not overlay_per_hospital and not overlay_per_year:
         fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
         axes = axes.flatten()
 
@@ -153,7 +153,7 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx
             plt.show()
 
     # ----------- 3) PER SPECIES OVERLAY PER HOSPITAL -----------
-    elif overlay_per_hospital:
+    elif per_species and overlay_per_hospital and not overlay_per_year:
         hospitals = sorted(tsne_df["hospital"].unique())
 
         for hosp_focus in hospitals:
@@ -199,6 +199,76 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, idx
             else:
                 plt.show()
 
+    # ----------- 4) OVERLAY PER YEAR (colored by year, one plot per hospital with all species) -----------
+    elif per_species and overlay_per_year:
+        hospitals = sorted(df["hospital"].unique())
+        years = sorted(df["year"].unique())
+
+        for hosp_focus in hospitals:
+            fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
+            axes = axes.flatten()
+
+            for i, sp in enumerate(sorted(df["species"].unique())):
+                # subset of this species for current hospital and others
+                subset_all = df[df["species"] == sp]
+                subset_focus = subset_all[subset_all["hospital"] == hosp_focus]
+                subset_other = subset_all[subset_all["hospital"] != hosp_focus]
+
+                # --- Background: all other hospitals (gray, faint)
+                axes[i].scatter(
+                    subset_other["x"], subset_other["y"],
+                    s=8, alpha=0.1, color="gray"
+                )
+
+                # --- Plot each year (colored)
+                for year_focus in years:
+                    sub_y = subset_focus[subset_focus["year"] == year_focus]
+                    axes[i].scatter(
+                        sub_y["x"], sub_y["y"],
+                        s=12, alpha=0.5,
+                        label=str(year_focus) if i == 0 else None
+                    )
+
+                # --- Overlay misclassified points (optional)
+                if idx is not None and len(idx) > 0:
+                    valid_idx = idx[idx < len(df)]
+                    mis_points = df.iloc[valid_idx]
+                    mis_sp = mis_points[
+                        (mis_points["species"] == sp)
+                        & (mis_points["hospital"] == hosp_focus)
+                    ]
+                    if len(mis_sp) > 0:
+                        axes[i].scatter(
+                            mis_sp["x"],
+                            mis_sp["y"],
+                            marker="x",
+                            s=45,
+                            color="purple",
+                            alpha=0.8,
+                            label="Misclassified" if i == 0 else None
+                        )
+
+                axes[i].set_title(sp.replace("_", " "), fontsize=14)
+                axes[i].set_xticks([]); axes[i].set_yticks([])
+
+            axes[0].legend(
+                title="Year",
+                loc="upper left",
+                frameon=True,
+                fontsize=10,
+                title_fontsize=11
+            )
+            plt.suptitle(f"t-SNE per species — {hosp_focus} (colored by year)", fontsize=18)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+            if save and path:
+                out_path = path.replace(".png", f"_{hosp_focus}_by_year.png")
+                plt.savefig(out_path)
+                plt.close()
+            else:
+                plt.show()
+
+
 
 def compute_tsne_per_species(X, labels, metadata, prefix="z"):
     """
@@ -212,10 +282,11 @@ def compute_tsne_per_species(X, labels, metadata, prefix="z"):
         "hospital": metadata["hospital"].values
     })
 
-    for d in range(X.shape[1]):
-        df_all[f"{prefix}{d}"] = X[:, d]
-
     tsne_results = {}
+
+    # Inicializamos columnas vacías
+    df_all["x"] = np.nan
+    df_all["y"] = np.nan
 
     for sp in sorted(np.unique(labels)):
         mask = np.where(labels == sp)[0]        
@@ -223,16 +294,21 @@ def compute_tsne_per_species(X, labels, metadata, prefix="z"):
         tsne = TSNE(n_components=2, random_state=42)
         X_tsne = tsne.fit_transform(X_sp)
 
+        # Guardar resultados
         tsne_results[sp] = {
             "embedding": X_tsne,
             "hospital": metadata["hospital"].values[mask],
             "mask": mask,                      
         }
 
+        # Rellenar df_all con coordenadas
+        df_all.loc[mask, "x"] = X_tsne[:, 0]
+        df_all.loc[mask, "y"] = X_tsne[:, 1]
+
     return df_all, tsne_results
 
 
-def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, idx=None, save=False, path=None):
+def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, overlay_per_year_per_species=False, idx=None, save=False, path=None):
     """
     Plot t-SNE embeddings computed independently for each species.
     If overlay=True, also creates one plot per hospital highlighting its samples.
@@ -248,7 +324,7 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, idx=None
     hospitals_sorted = sorted(df_all["hospital"].unique())
 
     # --- Plot per species (as before) ---
-    if not overlay_per_hospital:
+    if not overlay_per_hospital and not overlay_per_year_per_species:
         fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
                                  sharex=True, sharey=True)
         axes = axes.flatten()
@@ -290,7 +366,7 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, idx=None
             plt.show()
 
     # --- Overlay plots (one per hospital) ---
-    else:
+    elif overlay_per_hospital:
         for h_focus in hospitals_sorted:
             fig, axes = plt.subplots(n_rows, 3, figsize=(18, 5 * n_rows),
                                      sharex=True, sharey=True)
@@ -339,6 +415,71 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, idx=None
             if save and path:
                 hosp_path = path.replace(".png", f"_{h_focus}.png")
                 plt.savefig(hosp_path)
+                plt.close()
+            else:
+                plt.show()
+
+    # ----------- 5) OVERLAY PER YEAR (per species, with gray background for other hospitals) -----------
+    elif overlay_per_year_per_species:
+        years = sorted(df_all["year"].unique())
+        hospitals_sorted = sorted(df_all["hospital"].unique())
+        species_sorted = sorted(df_all["species"].unique())
+
+        for h_focus in hospitals_sorted:
+            fig, axes = plt.subplots(2, 3, figsize=(18, 10), sharex=True, sharey=True)
+            axes = axes.flatten()
+
+            for i, sp in enumerate(species_sorted):
+                subset_all = df_all[df_all["species"] == sp]
+                subset_focus = subset_all[subset_all["hospital"] == h_focus]
+                subset_other = subset_all[subset_all["hospital"] != h_focus]
+
+                # --- Background: all other hospitals (gray)
+                axes[i].scatter(
+                    subset_other["x"], subset_other["y"],
+                    s=8, alpha=0.1, color="gray"
+                )
+
+                # --- Plot each year for this hospital
+                for year_focus in years:
+                    sub_y = subset_focus[subset_focus["year"] == year_focus]
+                    axes[i].scatter(
+                        sub_y["x"], sub_y["y"],
+                        s=12, alpha=0.5,
+                        label=str(year_focus) if i == 0 else None
+                    )
+
+                # --- Overlay misclassified points (optional)
+                if idx is not None and len(idx) > 0:
+                    valid_idx = idx[idx < len(df_all)]
+                    mis_points = df_all.iloc[valid_idx]
+                    mis_sp = mis_points[
+                        (mis_points["species"] == sp)
+                        & (mis_points["hospital"] == h_focus)
+                    ]
+                    if len(mis_sp) > 0:
+                        axes[i].scatter(
+                            mis_sp["x"], mis_sp["y"],
+                            marker="x", s=45, color="purple", alpha=0.8,
+                            label="Misclassified" if i == 0 else None
+                        )
+
+                axes[i].set_title(sp.replace("_", " "), fontsize=14)
+                axes[i].set_xticks([]); axes[i].set_yticks([])
+
+            axes[0].legend(
+                title="Year",
+                loc="upper left",
+                frameon=True,
+                fontsize=10,
+                title_fontsize=11
+            )
+            plt.suptitle(f"t-SNE per species — {h_focus} (colored by year)", fontsize=18)
+            plt.tight_layout(rect=[0, 0, 1, 0.95])
+
+            if save and path:
+                out_path = path.replace(".png", f"_{h_focus}_by_year.png")
+                plt.savefig(out_path)
                 plt.close()
             else:
                 plt.show()

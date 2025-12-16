@@ -46,12 +46,12 @@ from utils.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_specie
 HOSPITALS_TO_INCLUDE = ["DRIAMS_A", "DRIAMS_D"]   # or None for all
 
 # Which species to include (None = all)
-#SPECIES_TO_INCLUDE = None
-SPECIES_TO_INCLUDE = [
-    "Escherichia_Coli",
-    "Klebsiella_Pneumoniae",
-    "Staphylococcus_Aureus"
-]
+SPECIES_TO_INCLUDE = None
+#SPECIES_TO_INCLUDE = [
+#    "Escherichia_Coli",
+#    "Klebsiella_Pneumoniae",
+#    "Staphylococcus_Aureus"
+#]
 
 
 #################################
@@ -78,6 +78,11 @@ if SPECIES_TO_INCLUDE is not None:
     label = label[selected_idx]
     meta = meta.iloc[selected_idx].reset_index(drop=True)
 
+# Apply normalization: scale each spectrum to [0, 1]
+X_min = data.min(axis=1, keepdims=True)
+X_max = data.max(axis=1, keepdims=True)
+data_norm = (data - X_min) / (X_max - X_min + 1e-8)
+
 print(f"Selected hospitals: {HOSPITALS_TO_INCLUDE if HOSPITALS_TO_INCLUDE else 'ALL'}")
 print(f"Selected species: {SPECIES_TO_INCLUDE if SPECIES_TO_INCLUDE else 'ALL'}")
 print(f"Data shape after filtering: {data.shape} \n")
@@ -90,7 +95,7 @@ print(f"Data shape after filtering: {data.shape} \n")
 print("====== Computing PCA... ======\n")
 
 scaler = StandardScaler()
-data_scaled = scaler.fit_transform(data)
+data_scaled = scaler.fit_transform(data_norm)
  
 pca = PCA(n_components=50)
 data_pca = pca.fit_transform(data_scaled)
@@ -105,10 +110,12 @@ tsne_df = compute_tsne_df(data_pca, label, meta)
 df_all, tsne_results = compute_tsne_per_species(data_pca, label, meta, prefix="f")
 
 print("====== Saving plots... ======", "\n")
-plot_tsne_global(tsne_df, per_species=False, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global.png')
-plot_tsne_global(tsne_df, per_species=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global_species.png')
-plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_global_species_overlay.png')
-plot_tsne_species(df_all, tsne_results, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_species.png')
-plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_FULL/driams_reduced_tsne_species_overlay.png')
+plot_tsne_global(tsne_df, per_species=False, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_global.png')
+plot_tsne_global(tsne_df, per_species=True, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_global_species.png')
+plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_global_species_overlay.png')
+plot_tsne_global(tsne_df, per_species=True, overlay_per_year=True, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_global_species_overlay_year.png')
+plot_tsne_species(df_all, tsne_results, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_species.png')
+plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_species_overlay.png')
+plot_tsne_species(df_all, tsne_results, overlay_per_year_per_species=True, save=True, path='exploration/output_plots/DRIAMS_A_D_years/driams_reduced_tsne_species_overlay_year.png')
 
 print("====== Done! ======")
