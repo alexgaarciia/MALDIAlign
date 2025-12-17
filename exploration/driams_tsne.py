@@ -32,8 +32,8 @@ import pandas as pd
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
-from utils.load_config import load_config
-from utils.load_data import load_pkl
+from utils.config import load_config
+from utils.data import load_pkl
 from utils.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_species, plot_tsne_species
 
 

@@ -32,7 +32,7 @@ def plot_model_metrics(model, model_name, save=False, path=None):
     plt.tight_layout()
 
     if save and path:
-        plt.savefig(path + "_train.png")
+        plt.savefig(path.parent / f"{path.name}_train.png")
         plt.close()
     else:
         plt.show()
@@ -49,7 +49,7 @@ def plot_model_metrics(model, model_name, save=False, path=None):
     plt.grid(alpha=0.3)
     plt.tight_layout()
     if save and path:
-        plt.savefig(path + "_val.png")
+        plt.savefig(path.parent / f"{path.name}_val.png")
         plt.close()
     else:
         plt.show()
@@ -193,7 +193,7 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, ove
             plt.tight_layout(rect=[0, 0, 1, 0.95])
 
             if save and path:
-                hosp_path = path.replace(".png", f"_{hosp_focus}.png")
+                hosp_path = path.parent / f"{path.stem}_{hosp_focus}.png"
                 plt.savefig(hosp_path)
                 plt.close()
             else:
@@ -262,12 +262,11 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, ove
             plt.tight_layout(rect=[0, 0, 1, 0.95])
 
             if save and path:
-                out_path = path.replace(".png", f"_{hosp_focus}_by_year.png")
+                out_path = path.parent / f"{path.stem}_{hosp_focus}_by_year.png"
                 plt.savefig(out_path)
                 plt.close()
             else:
                 plt.show()
-
 
 
 def compute_tsne_per_species(X, labels, metadata, prefix="z"):
@@ -413,7 +412,7 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, overlay_
             plt.tight_layout(rect=[0, 0, 1, 0.95])
 
             if save and path:
-                hosp_path = path.replace(".png", f"_{h_focus}.png")
+                hosp_path = path.parent / f"{path.stem}_{h_focus}.png"
                 plt.savefig(hosp_path)
                 plt.close()
             else:
@@ -478,7 +477,7 @@ def plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, overlay_
             plt.tight_layout(rect=[0, 0, 1, 0.95])
 
             if save and path:
-                out_path = path.replace(".png", f"_{h_focus}_by_year.png")
+                out_path = path.parent / f"{path.stem}_{h_focus}_by_year.png"
                 plt.savefig(out_path)
                 plt.close()
             else:
