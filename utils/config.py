@@ -1,6 +1,6 @@
 import yaml
 
-def load_config(path: str = "config.yaml"):
+def load_config(path: str = "configs/config.yaml"):
     """
     Load configuration parameters from a YAML file.
 

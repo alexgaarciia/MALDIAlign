@@ -2,3 +2,4 @@ data:
   PATH_BACTERIA_ID: "/export/data_ml4ds/bacteria_id"
   MARISMa_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/MARISMa_study.pkl"
   DRIAMS_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/DRIAMS_study.pkl"
+  DRIAMS_REDUCED_PKL2: "/export/usuarios01/agnavarr/MALDIAlign/DRIAMS_study.pkl"

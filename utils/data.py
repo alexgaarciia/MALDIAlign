@@ -4,7 +4,11 @@ import pandas as pd
 
 from pathlib import Path
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
+
+import torch
 from torch.utils.data import TensorDataset, DataLoader
+from utils.config import load_config
 
 
 def verify_data_path(data_dir):
@@ -218,3 +222,115 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
         shuffle=False)
 
     return train_loader, val_loader, all_loader
+
+def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64):
+    """
+    Load, preprocess, and split the DRIAMS dataset, returning PyTorch DataLoaders
+    and metadata required for model training and evaluation.
+
+    This function:
+    - Loads the DRIAMS dataset from a pickle file defined in the project config.
+    - Optionally filters samples by a list of hospital domains.
+    - Concatenates data, labels, and metadata across selected domains.
+    - Applies row-wise normalization to each spectrum.
+    - Splits the dataset into training and validation sets with stratification
+      by class labels.
+    - Constructs PyTorch DataLoaders for training, validation, and full-dataset
+      evaluation.
+
+    Parameters
+    ----------
+    domains : list of str, optional
+        List of hospital identifiers to include (e.g., ["DRIAMS_A", "DRIAMS_D"]).
+        If provided, only samples from these domains are used.
+    normalization : str, optional
+        Normalization strategy applied to the spectra.
+        Currently supported:
+        - "row_minmax": min-max normalization applied independently to each sample.
+    test_size : float, optional
+        Fraction of the dataset used for validation.
+    seed : int, optional
+        Random seed used for reproducible train/validation splitting.
+    batch_size : int, optional
+        Batch size used for the training and validation DataLoaders.
+
+    Returns
+    -------
+    dict
+        Dictionary containing:
+        - "data_final" : np.ndarray
+            Concatenated (unnormalized) spectral data.
+        - "label_final" : np.ndarray
+            Class labels corresponding to each sample.
+        - "meta_final" : pd.DataFrame
+            Metadata associated with each sample (e.g., hospital domain).
+        - "train_loader" : torch.utils.data.DataLoader
+            DataLoader for the training split.
+        - "val_loader" : torch.utils.data.DataLoader
+            DataLoader for the validation split.
+        - "all_loader" : torch.utils.data.DataLoader
+            DataLoader over the full dataset (no shuffling), typically used for
+            evaluation or visualization.
+        - "input_dim" : int
+            Dimensionality of the input spectra (number of features per sample).
+    """
+
+    # Load DRIAMS pickle file
+    cfg = load_config()
+    driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL2"]
+
+    # Filter driams
+    driams = load_driams(driams_pkl, filter=domains)
+    data, label, meta = [], [], []
+    if domains:
+        for d in domains:
+            data.append(driams[d]["data"])
+            label.append(driams[d]["label"])
+            meta.append(driams[d]["meta"])
+        data_final = np.vstack(data)
+        label_final = np.concatenate(label)
+        meta_final  = pd.concat(meta, ignore_index=True)
+    else:
+        data_final = driams[0]
+        label_final = driams[1]
+        meta_final = driams[2]
+
+    # Normalize data
+    if normalization == "row_minmax":
+        data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8)
+
+    # Construct dataloaders
+    domain_ids = map_domains(meta_final)
+    X_train, X_val, y_train, y_val, domain_train, domain_val = train_test_split(
+        data_norm, 
+        label_final, 
+        domain_ids, 
+        test_size=test_size, 
+        random_state=seed, 
+        stratify=label_final)
+
+    X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
+    X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
+    X_all_tensor = torch.tensor(data_norm, dtype=torch.float32)
+
+    domain_train_tensor = torch.tensor(domain_train, dtype=torch.long)
+    domain_val_tensor = torch.tensor(domain_val, dtype=torch.long)
+    domain_all_tensor = torch.tensor(domain_ids, dtype=torch.long)
+
+    train_loader, val_loader, all_loader = construct_dataloaders(X_train_tensor, 
+                                                                 X_val_tensor, 
+                                                                 X_all_tensor, 
+                                                                 domain_train_tensor, 
+                                                                 domain_val_tensor, 
+                                                                 domain_all_tensor, 
+                                                                 batch_size=batch_size)
+
+    return {
+        "data_final": data_final,
+        "label_final": label_final,
+        "meta_final": meta_final,
+        "train_loader": train_loader,
+        "val_loader": val_loader,
+        "all_loader": all_loader,
+        "input_dim": data_final.shape[1],
+    }
