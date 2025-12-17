@@ -1,0 +1,25 @@
+experiment:
+  name: vae_bernoulli
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  domains: ["DRIAMS_A", "DRIAMS_D"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 64
+
+model: 
+  type: vae_bernoulli
+  latent_dim: 64
+
+training: 
+  epochs: 200
+  lr: 1e-4
+  annealing_epochs: 100
+  patience: 40
+  metrics_plot_title: "VAE"
+
+evaluation:
+  compute_tsne: True
+  use_domain: False

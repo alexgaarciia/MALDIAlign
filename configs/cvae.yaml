@@ -1,0 +1,25 @@
+experiment:
+  name: cvae
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  domains: ["DRIAMS_A", "DRIAMS_D"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 64
+
+model:
+  type: cvae
+  latent_dim: 64
+  cond_dim: 2
+
+training:
+  epochs: 200
+  annealing_epochs: 100
+  patience: 40
+  metrics_plot_title: "cVAE"
+
+evaluation:
+  use_domain: true
+  compute_tsne: true
