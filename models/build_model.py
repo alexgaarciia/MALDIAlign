@@ -1,0 +1,88 @@
+from models.deep.VAEBernoulli import VAE_Bernoulli_Extended
+from models.deep.MultiVAE import MultiVAE_Bernoulli_Extended
+from models.deep.MultiVAECoral import MultiVAE_CORAL
+from models.deep.cVAE import ConditionalVAE_Bernoulli_Extended
+from models.deep.cVAEInvariant import InvariantCVAE_Bernoulli_Extended
+
+def build_model(cfg: dict, input_dim: int):
+    """
+    Instantiate a model based on the configuration dictionary.
+
+    This function acts as a factory that maps the `model` section of the YAML
+    configuration to a concrete PyTorch model class. Due to the current design
+    of the model classes, training-related parameters are also passed to the
+    model constructor for compatibility.
+
+    Parameters
+    ----------
+    cfg : dict
+        Full experiment configuration dictionary loaded from YAML. Must contain
+        at least the keys:
+        - cfg["model"]
+        - cfg["training"]
+    input_dim : int
+        Dimensionality of the input data (number of features per sample).
+
+    Returns
+    -------
+    model : torch.nn.Module
+        Instantiated (but untrained) model.
+    """
+
+    model_cfg = cfg["model"]
+    training_cfg = cfg["training"]
+    model_type = model_cfg["type"]
+
+    if model_type == "vae_bernoulli":
+        model = VAE_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "vae_multidecoder":
+        model = MultiVAE_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "vae_multidecoder_coral":
+        model = MultiVAE_CORAL(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "cvae":
+        model = ConditionalVAE_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            cond_dim=model_cfg["cond_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "cvae_invariant":
+        model = InvariantCVAE_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            cond_dim=model_cfg["cond_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    else:
+        raise ValueError(f"Unknown model type: {model_type}")
+
+    return model
