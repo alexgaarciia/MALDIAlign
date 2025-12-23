@@ -175,7 +175,7 @@ def scale_data(X_train, X_val, prescaler=None):
     return scaler, X_train_scaled, X_val_scaled
 
 
-def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_train_tensor, domain_val_tensor, domain_all_tensor, batch_size):
+def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_train_tensor, domain_val_tensor, domain_all_tensor, batch_size, species_train_tensor=None, species_val_tensor=None, species_all_tensor=None):
     """
     Build PyTorch DataLoaders for train and validation sets.
 
@@ -200,10 +200,16 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
         DataLoader containing (X_val_tensor, domain_val_tensor).
     """
     
-    train_dataset = TensorDataset(X_train_tensor, domain_train_tensor)
-    val_dataset   = TensorDataset(X_val_tensor, domain_val_tensor)
-    all_dataset = TensorDataset(X_all_tensor, domain_all_tensor)
 
+    if species_train_tensor is None:
+        train_dataset = TensorDataset(X_train_tensor, domain_train_tensor)
+        val_dataset   = TensorDataset(X_val_tensor, domain_val_tensor)
+        all_dataset   = TensorDataset(X_all_tensor, domain_all_tensor)
+    else:
+        train_dataset = TensorDataset(X_train_tensor, domain_train_tensor, species_train_tensor)
+        val_dataset   = TensorDataset(X_val_tensor, domain_val_tensor, species_val_tensor)
+        all_dataset   = TensorDataset(X_all_tensor, domain_all_tensor, species_all_tensor)
+        
     train_loader = DataLoader(
         train_dataset,
         batch_size=batch_size,
@@ -223,7 +229,7 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
 
     return train_loader, val_loader, all_loader
 
-def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64):
+def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False):
     """
     Load, preprocess, and split the DRIAMS dataset, returning PyTorch DataLoaders
     and metadata required for model training and evaluation.
@@ -291,23 +297,30 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         label_final = np.concatenate(label)
         meta_final  = pd.concat(meta, ignore_index=True)
     else:
-        data_final = driams[0]
-        label_final = driams[1]
-        meta_final = driams[2]
+        data_final, label_final, meta_final = driams
 
     # Normalize data
     if normalization == "row_minmax":
-        data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8)
+        data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (
+            data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8
+        )
+    else:
+        data_norm = data_final
+
+    # Encode species labels 
+    unique_species, label_indices = np.unique(label_final, return_inverse=True)
+    species_to_idx = {s: i for i, s in enumerate(unique_species)}
 
     # Construct dataloaders
     domain_ids = map_domains(meta_final)
     X_train, X_val, y_train, y_val, domain_train, domain_val = train_test_split(
-        data_norm, 
-        label_final, 
-        domain_ids, 
-        test_size=test_size, 
-        random_state=seed, 
-        stratify=label_final)
+        data_norm,
+        label_indices, 
+        domain_ids,
+        test_size=test_size,
+        random_state=seed,
+        stratify=label_indices
+    )
 
     X_train_tensor = torch.tensor(X_train, dtype=torch.float32)
     X_val_tensor = torch.tensor(X_val, dtype=torch.float32)
@@ -317,13 +330,25 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
     domain_val_tensor = torch.tensor(domain_val, dtype=torch.long)
     domain_all_tensor = torch.tensor(domain_ids, dtype=torch.long)
 
-    train_loader, val_loader, all_loader = construct_dataloaders(X_train_tensor, 
-                                                                 X_val_tensor, 
-                                                                 X_all_tensor, 
-                                                                 domain_train_tensor, 
-                                                                 domain_val_tensor, 
-                                                                 domain_all_tensor, 
-                                                                 batch_size=batch_size)
+    species_train_tensor = torch.tensor(y_train, dtype=torch.long)
+    species_val_tensor   = torch.tensor(y_val, dtype=torch.long)
+    species_all_tensor   = torch.tensor(label_indices, dtype=torch.long)
+
+    train_loader, val_loader, all_loader = construct_dataloaders(
+        X_train_tensor, X_val_tensor, X_all_tensor,
+        domain_train_tensor, domain_val_tensor, domain_all_tensor,
+        batch_size=batch_size,
+        species_train_tensor=species_train_tensor,
+        species_val_tensor=species_val_tensor,
+        species_all_tensor=species_all_tensor
+    )
+
+    species_weights = None
+    if use_species_weight:
+        counts = np.bincount(label_indices)
+        inv_freq = 1.0 / counts
+        normalized_weights = inv_freq / inv_freq.sum()
+        species_weights = torch.tensor(normalized_weights, dtype=torch.float32)
 
     return {
         "data_final": data_final,
@@ -333,4 +358,5 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         "val_loader": val_loader,
         "all_loader": all_loader,
         "input_dim": data_final.shape[1],
+        "species_weights": species_weights
     }

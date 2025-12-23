@@ -27,11 +27,17 @@ class MultiVAE_Bernoulli(nn.Module):
 
         return mu, logvar, z
 
-    def elbo_loss(self, x, mu, logvar, z, domain_id, beta=1.0):
-        RE = self.decoder.log_prob(x, z, domain_id)
-        KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
-        NLL = -(RE - beta * KL)
-        return NLL.mean(), (-RE).mean(), KL.mean()
+    def elbo_loss(self, x, mu, logvar, z, domain_id, species_id=None, species_weights=None, beta=1.0):
+        RE = self.decoder.log_prob(x, z, domain_id) 
+        KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1) 
+        NLL_per_sample = -(RE - beta * KL) 
+
+        # Species weighting
+        if species_id is not None and species_weights is not None:
+            weights = species_weights[species_id]
+            NLL_per_sample = NLL_per_sample * weights
+
+        return NLL_per_sample.mean(), (-RE).mean(), KL.mean()
 
 
 class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
@@ -49,8 +55,10 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
         self.reconstruc_during_training = []
         self.KL_during_training = []
 
-    def trainloop(self, trainloader, validloader, device):
+    def trainloop(self, trainloader, validloader, device, species_weights=None):
         self.to(device)
+
+        species_weight_tensor = species_weights.to(device) if species_weights is not None else None
 
         best_val_loss = float("inf")
         patience_counter = 0
@@ -63,11 +71,26 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
             self.train()
             train_total_loss, train_recon_loss, train_kl_loss = 0, 0, 0
 
-            for x, domain_id in trainloader:
+            for batch in trainloader:
+                # Support both 2-item and 3-item batches
+                if len(batch) == 2:
+                    x, domain_id = batch
+                    species_id = None
+                else:
+                    x, domain_id, species_id = batch
+
                 x, domain_id = x.to(device), domain_id.to(device)
+                if species_id is not None:
+                    species_id = species_id.to(device)
+
                 self.optimizer.zero_grad()
                 mu, logvar, z = self.forward(x, domain_id)
-                loss, recon, kl = self.elbo_loss(x, mu, logvar, z, domain_id, beta)
+                loss, recon, kl = self.elbo_loss(
+                    x, mu, logvar, z, domain_id,
+                    beta=beta,
+                    species_id=species_id,
+                    species_weights=species_weight_tensor
+                )
                 loss.backward()
                 self.optimizer.step()
                 train_total_loss += loss.item()
@@ -83,10 +106,25 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
             val_loss, val_recon, val_kl = 0.0, 0.0, 0.0
 
             with torch.no_grad():
-                for x, domain_id in validloader:
+                for batch in validloader:
+                    # Support both 2-item and 3-item batches
+                    if len(batch) == 2:
+                        x, domain_id = batch
+                        species_id = None
+                    else:
+                        x, domain_id, species_id = batch
+
                     x, domain_id = x.to(device), domain_id.to(device)
+                    if species_id is not None:
+                        species_id = species_id.to(device)
+
                     mu, logvar, z = self.forward(x, domain_id)
-                    loss, recon, kl = self.elbo_loss(x, mu, logvar, z, domain_id, beta)
+                    loss, recon, kl = self.elbo_loss(
+                        x, mu, logvar, z, domain_id,
+                        beta=beta,
+                        species_id=species_id,
+                        species_weights=species_weight_tensor
+                    )
                     val_loss += loss.item()
                     val_recon += recon.item()
                     val_kl += kl.item()

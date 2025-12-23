@@ -36,14 +36,21 @@ def eval_model(model, dataloader, device, use_domain=False):
 
     with torch.no_grad():
         for batch in dataloader:
-            if use_domain:
+            if len(batch) == 2:
                 x, domain = batch
-                x = x.to(device)
-                c = torch.eye(2)[domain].float().to(device)
+                species_id = None
+            elif len(batch) == 3:
+                x, domain, species_id = batch
+            else:
+                raise ValueError(f"Unexpected batch length: {len(batch)}")
+
+            x = x.to(device)
+
+            # If using domain conditioning
+            if use_domain:
+                c = torch.eye(model.decoder.num_domains, device=device)[domain]
                 mu, logvar = model.encoder(x, c)
             else:
-                x, _ = batch
-                x = x.to(device)
                 mu, logvar = model.encoder(x)
 
             mus_all.append(mu.cpu().numpy())
