@@ -229,20 +229,30 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
 
     return train_loader, val_loader, all_loader
 
-def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False):
-    """
-    Load, preprocess, and split the DRIAMS dataset, returning PyTorch DataLoaders
-    and metadata required for model training and evaluation.
 
-    This function:
+def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
+    """
+    Load, preprocess, and split the DRIAMS dataset for either deep-learning
+    models or classical classifiers.
+
+    This function performs the following steps:
     - Loads the DRIAMS dataset from a pickle file defined in the project config.
     - Optionally filters samples by a list of hospital domains.
     - Concatenates data, labels, and metadata across selected domains.
     - Applies row-wise normalization to each spectrum.
     - Splits the dataset into training and validation sets with stratification
-      by class labels.
-    - Constructs PyTorch DataLoaders for training, validation, and full-dataset
-      evaluation.
+      by species labels.
+
+    Depending on the value of `classification`, the function returns data in
+    different formats:
+
+    * If `classification=False` (default):
+        The function prepares PyTorch DataLoaders suitable for training and
+        evaluating deep-learning models (e.g. VAEs, cVAEs).
+
+    * If `classification=True`:
+        The function returns NumPy arrays suitable for training classical
+        machine-learning classifiers (e.g. Random Forests) using scikit-learn.
 
     Parameters
     ----------
@@ -258,27 +268,41 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
     seed : int, optional
         Random seed used for reproducible train/validation splitting.
     batch_size : int, optional
-        Batch size used for the training and validation DataLoaders.
+        Batch size used for the training and validation DataLoaders (deep-learning
+        mode only).
+    use_species_weight : bool, optional
+        Whether to compute inverse-frequency species weights (deep-learning mode
+        only).
+    classification : bool, optional
+        If True, return NumPy arrays for classical classifiers.
+        If False, return PyTorch DataLoaders for deep-learning models.
 
     Returns
     -------
     dict
-        Dictionary containing:
-        - "data_final" : np.ndarray
-            Concatenated (unnormalized) spectral data.
-        - "label_final" : np.ndarray
-            Class labels corresponding to each sample.
-        - "meta_final" : pd.DataFrame
-            Metadata associated with each sample (e.g., hospital domain).
-        - "train_loader" : torch.utils.data.DataLoader
-            DataLoader for the training split.
-        - "val_loader" : torch.utils.data.DataLoader
-            DataLoader for the validation split.
-        - "all_loader" : torch.utils.data.DataLoader
-            DataLoader over the full dataset (no shuffling), typically used for
-            evaluation or visualization.
-        - "input_dim" : int
-            Dimensionality of the input spectra (number of features per sample).
+        If classification=False:
+            {
+                "data_final": np.ndarray,
+                "label_final": np.ndarray,
+                "meta_final": pd.DataFrame,
+                "train_loader": torch.utils.data.DataLoader,
+                "val_loader": torch.utils.data.DataLoader,
+                "all_loader": torch.utils.data.DataLoader,
+                "input_dim": int,
+                "species_weights": torch.Tensor or None
+            }
+
+        If classification=True:
+            {
+                "X": np.ndarray,
+                    Normalized feature matrix for all samples.
+                "y": np.ndarray,
+                    Integer-encoded species labels.
+                "meta": pd.DataFrame,
+                    Metadata for all samples (e.g. hospital domain).
+                "class_names": np.ndarray,
+                    Array mapping label indices to species names.
+            }
     """
 
     # Load DRIAMS pickle file
@@ -309,7 +333,14 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
 
     # Encode species labels 
     unique_species, label_indices = np.unique(label_final, return_inverse=True)
-    species_to_idx = {s: i for i, s in enumerate(unique_species)}
+
+    if classification:
+        return {
+            "X": data_norm,
+            "y": label_indices,
+            "meta": meta_final,
+            "class_names": unique_species
+        }
 
     # Construct dataloaders
     domain_ids = map_domains(meta_final)
@@ -349,6 +380,7 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         inv_freq = 1.0 / counts
         normalized_weights = inv_freq / inv_freq.sum()
         species_weights = torch.tensor(normalized_weights, dtype=torch.float32)
+
 
     return {
         "data_final": data_final,

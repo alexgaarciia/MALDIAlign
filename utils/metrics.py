@@ -1,9 +1,11 @@
+from pathlib import Path
+import json
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.metrics import balanced_accuracy_score, f1_score, recall_score, confusion_matrix, ConfusionMatrixDisplay
 
 
-def metrics_report(X, y, model, domain_name):
+def metrics_report(X, y, model, domain_name, class_names=None):
     y_pred = model.predict(X)
     bal_acc = balanced_accuracy_score(y, y_pred)
     f1_macro = f1_score(y, y_pred, average="macro")
@@ -19,7 +21,7 @@ def metrics_report(X, y, model, domain_name):
     
     return {
         "Domain": domain_name,
-        "Labels": np.unique(y), 
+        "Labels": np.unique(y) if class_names is None else class_names, 
         "Balanced_Accuracy": bal_acc,
         "F1_Macro": f1_macro,
         "Recall_Macro": recall_macro,
@@ -27,15 +29,38 @@ def metrics_report(X, y, model, domain_name):
         "Confusion Matrix": cm
     }
 
-def print_metrics(metrics):
+def print_metrics(metrics, logs=False, save=False, path=None):
     domain, class_names, b_acc, f1, recall, spec, cm = metrics["Domain"], metrics["Labels"], metrics["Balanced_Accuracy"], metrics["F1_Macro"], metrics["Recall_Macro"], metrics["Specificity_Macro"], metrics["Confusion Matrix"]
 
     # Print metrics information
-    print(f"Printing metrics for Domain: {domain}")
-    print(f"Balanced Accuracy: {b_acc}")
-    print(f"F1 Macro: {f1}")
-    print(f"Recall Macro: {recall}")
-    print(f"Specificity Macro: {spec}")
+    text = (
+        f"Domain: {domain}\n"
+        f"Balanced Accuracy: {b_acc:.4f}\n"
+        f"F1 Macro: {f1:.4f}\n"
+        f"Recall Macro: {recall:.4f}\n"
+        f"Specificity Macro: {spec:.4f}\n"
+    )
+
+    if not logs:
+        print("\n===== Metrics =====")
+        print(text)
+    else:
+        assert path is not None, "Path must be provided when logs=True"
+        path = Path(path)
+        json_path = path.with_suffix(".json")
+
+        with open(json_path, "w") as f:
+            json.dump(
+                {
+                    "domain": domain,
+                    "balanced_accuracy": b_acc,
+                    "f1_macro": f1,
+                    "recall_macro": recall,
+                    "specificity_macro": spec,
+                },
+                f,
+                indent=2
+            )
 
     # Plot confusion metrics with labels
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
@@ -48,5 +73,12 @@ def print_metrics(metrics):
     plt.xlabel("") 
     plt.ylabel("")  
     plt.tight_layout()
-    plt.show()
+
+    if save:
+        assert path is not None, "Path must be provided when save=True"
+        fig_path = Path(path).with_suffix(".png")
+        plt.savefig(fig_path)
+        plt.close()
+    else:
+        plt.show()
     
