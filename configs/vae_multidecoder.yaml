@@ -8,6 +8,7 @@ data:
   normalization: row_minmax
   test_size: 0.2
   batch_size: 64
+  use_species_weights: False
 
 model:
   type: vae_multidecoder

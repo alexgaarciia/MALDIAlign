@@ -1,5 +1,5 @@
 experiment:
-  name: cvae_invariant
+  name: vae_multidecoder
   seed: 42
   output_dir: experiments/results
 
@@ -11,15 +11,16 @@ data:
   use_species_weights: False
 
 model:
-  type: cvae_invariant
+  type: vae_multidecoder
   latent_dim: 64
-  cond_dim: 2
+  num_domains: 2
 
 training:
-  epochs: 200
-  annealing_epochs: 100
-  patience: 40
-  metrics_plot_title: "cVAE Invariant"
+  epochs: 300
+  lr: 1e-4
+  annealing_epochs: 150
+  patience: 60
+  metrics_plot_title: "VAE Multidecoder"
 
 evaluation:
   use_domain: false
