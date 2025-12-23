@@ -49,7 +49,7 @@ def build_model(cfg: dict, input_dim: int):
             num_domains=model_cfg["num_domains"],
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
+            patience=training_cfg["patience"]
         )
 
     elif model_type == "vae_multidecoder_coral":
