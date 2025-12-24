@@ -1,7 +1,0 @@
-=== Logistic RegressioWorking directory: /export/usuarios01/agnavarr/MALDIAlign
-Logging to: logs/logistic_baseline_20251211_1029.log
-otalling 12 fits
-
-=== Grid Search Finished ===
-Best params: {'lr__C': 0.1}
-Balanced Acc (CV): 0.9991692136670048

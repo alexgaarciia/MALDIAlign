@@ -1,8 +1,0 @@
-=== Logistic Regression Baseline Run ===
-Timestamp: 20251204_0936
-Starting grid search...
-Fitting 3 folds for each of 4 candidates, totalling 12 fits
-
-=== Grid Search Finished ===
-Best params: {'lr__C': 1}
-Balanced Acc (CV): 0.998842177111248

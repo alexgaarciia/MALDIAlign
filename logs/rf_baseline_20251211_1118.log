@@ -1,7 +1,0 @@
-=== Random Forest BaseWorking directory: /export/usuarios01/agnavarr/MALDIAlign
-Logging to: logs/rf_baseline_20251211_1118.log
-otalling 27 fits
-
-=== Grid Search Finished ===
-Best parameters: {'rf__max_depth': 20, 'rf__n_estimators': 200}
-Best Balanced Accuracy (CV): 0.9988450414932974
