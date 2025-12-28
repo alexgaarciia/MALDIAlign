@@ -1,0 +1,27 @@
+experiment:
+  name: cvae_species_domain_a_to_d
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  domains: ["DRIAMS_A", "DRIAMS_D"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 64
+  use_species_weights: false
+
+model:
+  type: cvae_species_domain
+  latent_dim: 32
+  species_dim: 6
+  domain_dim: 2 
+
+training:
+  epochs: 200
+  lr: 1e-4
+  annealing_epochs: 50
+  patience: 20
+  metrics_plot_title: "CVAE Species–Domain"
+
+evaluation:
+  use_domain: false
