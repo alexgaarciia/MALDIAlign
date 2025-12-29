@@ -36,28 +36,33 @@ def eval_model(model, dataloader, device, use_domain=False):
 
     with torch.no_grad():
         for batch in dataloader:
-            if len(batch) == 2:
-                x, domain = batch
+
+            if len(batch) == 3:
+                x, domain_id, species_id = batch
+            elif len(batch) == 2:
+                x, domain_id = batch
                 species_id = None
-            elif len(batch) == 3:
-                x, domain, species_id = batch
             else:
                 raise ValueError(f"Unexpected batch length: {len(batch)}")
 
             x = x.to(device)
 
-            # If using domain conditioning
-            if use_domain:
-                c = torch.eye(model.decoder.num_domains, device=device)[domain]
+            # Species-conditioned encoder 
+            if species_id is not None and hasattr(model, "n_species"):
+                species_id = species_id.to(device)
+                c = torch.nn.functional.one_hot(
+                    species_id, num_classes=model.n_species
+                ).float().to(device)
+
                 mu, logvar = model.encoder(x, c)
+
+            # Invariant encoder
             else:
                 mu, logvar = model.encoder(x)
 
             mus_all.append(mu.cpu().numpy())
 
-    mus_all = np.concatenate(mus_all, axis=0)
-    
-    return mus_all
+    return np.concatenate(mus_all, axis=0)
 
 
 def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix):
