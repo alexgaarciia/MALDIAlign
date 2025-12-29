@@ -1,0 +1,26 @@
+experiment:
+  name: cvae_invariant_species_256
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  domains: ["DRIAMS_A", "DRIAMS_D"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 64
+  use_species_weights: false   
+
+model:
+  type: cvae_invariant_species          
+  latent_dim: 256
+  cond_dim: 6                  
+
+training:
+  epochs: 200
+  annealing_epochs: 100
+  patience: 40
+  metrics_plot_title: "Species-aware CVAE"
+
+evaluation:
+  use_domain: false            
+  compute_tsne: true

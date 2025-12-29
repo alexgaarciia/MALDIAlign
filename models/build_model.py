@@ -3,6 +3,9 @@ from models.deep.MultiVAE import MultiVAE_Bernoulli_Extended
 from models.deep.MultiVAECoral import MultiVAE_CORAL
 from models.deep.cVAE import ConditionalVAE_Bernoulli_Extended
 from models.deep.cVAEInvariant import InvariantCVAE_Bernoulli_Extended
+from models.deep.cVAEInvariantSpecies import InvariantCVAESpecies_Bernoulli_Extended
+from models.deep.cVAESpecies import SpeciesCVAE_Bernoulli_Extended
+
 
 def build_model(cfg: dict, input_dim: int):
     """
@@ -77,6 +80,26 @@ def build_model(cfg: dict, input_dim: int):
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
             cond_dim=model_cfg["cond_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "cvae_invariant_species":
+        model =  InvariantCVAESpecies_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            n_species=model_cfg["cond_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "cvae_species":
+        model =  SpeciesCVAE_Bernoulli_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            n_species=model_cfg["cond_dim"],
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"],
