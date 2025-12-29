@@ -66,9 +66,11 @@ def compute_tsne_df(X, labels, metadata):
         "x": data_tsne[:, 0],
         "y": data_tsne[:, 1],
         "species": labels,
-        "year": metadata["year"].values, 
-        "hospital": metadata["hospital"].values
+        "year": metadata["year"].values
     })
+
+    if "hospital" in metadata.columns:
+        tsne_df["hospital"] = metadata["hospital"].values
 
     return tsne_df
 
@@ -278,12 +280,13 @@ def compute_tsne_per_species(X, labels, metadata, prefix="z"):
     df_all = pd.DataFrame({
         "species": labels,
         "year": metadata["year"].values,
-        "hospital": metadata["hospital"].values
     })
+
+    if "hospital" in metadata.columns:
+        df_all["hospital"] = metadata["hospital"].values
 
     tsne_results = {}
 
-    # Inicializamos columnas vacías
     df_all["x"] = np.nan
     df_all["y"] = np.nan
 
@@ -293,14 +296,14 @@ def compute_tsne_per_species(X, labels, metadata, prefix="z"):
         tsne = TSNE(n_components=2, random_state=42)
         X_tsne = tsne.fit_transform(X_sp)
 
-        # Guardar resultados
         tsne_results[sp] = {
             "embedding": X_tsne,
-            "hospital": metadata["hospital"].values[mask],
-            "mask": mask,                      
+            "mask": mask,
         }
 
-        # Rellenar df_all con coordenadas
+        if "hospital" in metadata.columns:
+            tsne_results[sp]["hospital"] = metadata["hospital"].values[mask]
+
         df_all.loc[mask, "x"] = X_tsne[:, 0]
         df_all.loc[mask, "y"] = X_tsne[:, 1]
 
