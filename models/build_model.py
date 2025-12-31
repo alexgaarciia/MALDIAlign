@@ -5,6 +5,8 @@ from models.deep.cVAE import ConditionalVAE_Bernoulli_Extended
 from models.deep.cVAEInvariant import InvariantCVAE_Bernoulli_Extended
 from models.deep.cVAEInvariantSpecies import InvariantCVAESpecies_Bernoulli_Extended
 from models.deep.cVAESpecies import SpeciesCVAE_Bernoulli_Extended
+from models.deep.mdvae_discriminative import DiscriminativeMultiDecoderVAE
+from models.deep.cVAEPrior import ConditionalVAE_Bernoulli_SpeciesPrior_Extended
 
 
 def build_model(cfg: dict, input_dim: int):
@@ -100,6 +102,31 @@ def build_model(cfg: dict, input_dim: int):
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
             n_species=model_cfg["cond_dim"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif cfg["model"]["type"] == "vae_multidecoder_discriminative":
+        model = DiscriminativeMultiDecoderVAE(
+            input_dim=input_dim,
+            latent_dim=cfg["model"]["latent_dim"],
+            num_domains=cfg["model"]["num_domains"],
+            num_species=cfg["model"]["num_species"],
+            epochs=cfg["training"]["epochs"],
+            lr = float(cfg["training"]["lr"]),
+            annealing_epochs=cfg["training"]["annealing_epochs"],
+            patience=cfg["training"]["patience"],
+            lambda_cls=cfg["model"].get("lambda_cls", 1.0),
+            source_domain_id=0
+        )
+
+    elif model_type == "cvae_species_prior":
+        model = ConditionalVAE_Bernoulli_SpeciesPrior_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            cond_dim=model_cfg["cond_dim"],      
+            n_species=model_cfg["n_species"],   
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"],

@@ -47,16 +47,17 @@ def eval_model(model, dataloader, device, use_domain=False):
 
             x = x.to(device)
 
-            # Species-conditioned encoder 
-            if species_id is not None and hasattr(model, "n_species"):
-                species_id = species_id.to(device)
+            # Conditional encoder (domain-conditioned)
+            if use_domain:
+                domain_id = domain_id.to(device)
                 c = torch.nn.functional.one_hot(
-                    species_id, num_classes=model.n_species
+                    domain_id,
+                    num_classes=model.cond_dim
                 ).float().to(device)
 
                 mu, logvar = model.encoder(x, c)
 
-            # Invariant encoder
+            # Plain encoder
             else:
                 mu, logvar = model.encoder(x)
 
