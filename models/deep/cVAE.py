@@ -2,47 +2,186 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 from models.deep.networks import ConditionalEncoder, ConditionalDecoder
-
+    
 
 class ConditionalVAE_Bernoulli(nn.Module):
+    """
+    Conditional Variational Autoencoder (CVAE) with a Bernoulli likelihood.
+
+    This model learns a conditional latent representation z given an input x
+    and a conditioning variable c (e.g., domain or hospital), following the
+    standard VAE formulation with the reparameterization trick.
+
+    The decoder is assumed to model p(x | z, c) as a Bernoulli distribution.
+    """
+
     def __init__(self, input_dim, latent_dim, cond_dim):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            Dimensionality of the input data x.
+        latent_dim : int
+            Dimensionality of the latent space z.
+        cond_dim : int
+            Dimensionality of the conditioning variable c
+            (e.g., number of domains for one-hot encoding).
+        """
         super().__init__()
+        self.cond_dim = cond_dim
         self.encoder = ConditionalEncoder(input_dim, latent_dim, cond_dim)
         self.decoder = ConditionalDecoder(latent_dim, input_dim, cond_dim)
 
     def reparameterize(self, mu, logvar):
+        """
+        Reparameterization trick to sample from q(z | x, c).
+
+        Parameters
+        ----------
+        mu : torch.Tensor
+            Mean of the approximate posterior.
+        logvar : torch.Tensor
+            Log-variance of the approximate posterior.
+
+        Returns
+        -------
+        z : torch.Tensor
+            Sampled latent variable.
+        """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
     def forward(self, x, c):
+        """
+        Forward pass through the CVAE.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data.
+        c : torch.Tensor
+            Conditioning variable (e.g., one-hot encoded domain).
+
+        Returns
+        -------
+        mu : torch.Tensor
+            Mean of q(z | x, c).
+        logvar : torch.Tensor
+            Log-variance of q(z | x, c).
+        z : torch.Tensor
+            Sampled latent representation.
+        """
         mu, logvar = self.encoder(x, c)
         z = self.reparameterize(mu, logvar)
         return mu, logvar, z
 
     def elbo_loss(self, x, mu, logvar, z, c, beta=1.0):
+        """
+        Computes the Evidence Lower Bound (ELBO) loss.
+
+        ELBO = E_q[log p(x | z, c)] - beta * KL(q(z | x, c) || p(z))
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data.
+        mu : torch.Tensor
+            Mean of the approximate posterior.
+        logvar : torch.Tensor
+            Log-variance of the approximate posterior.
+        z : torch.Tensor
+            Sampled latent variable.
+        c : torch.Tensor
+            Conditioning variable.
+        beta : float, optional
+            Weight for the KL divergence term (default: 1.0).
+
+        Returns
+        -------
+        loss : torch.Tensor
+            Mean negative ELBO.
+        recon_loss : torch.Tensor
+            Mean reconstruction loss (negative log-likelihood).
+        kl_loss : torch.Tensor
+            Mean KL divergence.
+        """
         RE = self.decoder.log_prob(x, z, c)
-        KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        KL = -0.5 * torch.sum(
+            1 + logvar - mu.pow(2) - logvar.exp(), dim=1
+        )
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
-    
+
 
 class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
-    def __init__(self, input_dim, latent_dim, cond_dim, lr=1e-4, epochs=100,
-                 patience=20, annealing_epochs=50):
+    """
+    Extension of ConditionalVAE_Bernoulli including:
+    - Optimizer definition
+    - Training and validation loops
+    - KL annealing
+    - Early stopping
+    - Loss tracking during training
+    """
+
+    def __init__(
+        self,
+        input_dim,
+        latent_dim,
+        cond_dim,
+        lr=1e-4,
+        epochs=100,
+        patience=20,
+        annealing_epochs=50,
+    ):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            Dimensionality of the input data.
+        latent_dim : int
+            Dimensionality of the latent space.
+        cond_dim : int
+            Dimensionality of the conditioning variable.
+        lr : float, optional
+            Learning rate for the optimizer (default: 1e-4).
+        epochs : int, optional
+            Maximum number of training epochs (default: 100).
+        patience : int, optional
+            Number of epochs without validation improvement before early stopping.
+        annealing_epochs : int, optional
+            Number of epochs over which beta is linearly annealed to 1.
+        """
         super().__init__(input_dim, latent_dim, cond_dim)
+
         self.lr = lr
         self.epochs = epochs
         self.patience = patience
         self.annealing_epochs = annealing_epochs
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
+
+        self.optimizer = optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=1e-5
+        )
 
         self.loss_during_training = []
         self.reconstruc_during_training = []
         self.KL_during_training = []
 
     def trainloop(self, trainloader, validloader, device):
+        """
+        Full training loop with validation, KL annealing and early stopping.
+
+        Parameters
+        ----------
+        trainloader : torch.utils.data.DataLoader
+            DataLoader for the training set.
+        validloader : torch.utils.data.DataLoader
+            DataLoader for the validation set.
+        device : torch.device
+            Device on which to run the model (CPU or CUDA).
+        """
         self.to(device)
+
         best_val_loss = float("inf")
         patience_counter = 0
         best_state = None
@@ -50,17 +189,33 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
         for epoch in range(self.epochs):
             beta = min(1.0, (epoch + 1) / self.annealing_epochs)
 
-            # TRAIN
+            # =======================
+            #        TRAIN
+            # =======================
             self.train()
-            total_loss, total_recon, total_kl = 0, 0, 0
+            total_loss, total_recon, total_kl = 0.0, 0.0, 0.0
 
-            for x, domain_id in trainloader:
-                x, domain_id = x.to(device), domain_id.to(device)
-                c = nn.functional.one_hot(domain_id, num_classes=2).float().to(device)
+            for batch in trainloader:
+                # batch can be (x, domain) or (x, domain, species)
+                if len(batch) == 3:
+                    x, domain_id, _ = batch
+                else:
+                    x, domain_id = batch
+
+                x = x.to(device)
+                domain_id = domain_id.to(device)
+
+                c_domain = nn.functional.one_hot(
+                    domain_id, num_classes=self.cond_dim
+                ).float().to(device)
 
                 self.optimizer.zero_grad()
-                mu, logvar, z = self.forward(x, c)
-                loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
+
+                mu, logvar, z = self.forward(x, c_domain)
+                loss, recon, kl = self.elbo_loss(
+                    x, mu, logvar, z, c_domain, beta
+                )
+
                 loss.backward()
                 self.optimizer.step()
 
@@ -72,15 +227,31 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
             train_recon = total_recon / len(trainloader)
             train_kl = total_kl / len(trainloader)
 
-            # VALIDATION
+            # =======================
+            #       VALIDATION
+            # =======================
             self.eval()
-            val_loss, val_recon, val_kl = 0, 0, 0
+            val_loss, val_recon, val_kl = 0.0, 0.0, 0.0
+
             with torch.no_grad():
-                for x, domain_id in validloader:
-                    x, domain_id = x.to(device), domain_id.to(device)
-                    c = nn.functional.one_hot(domain_id, num_classes=2).float().to(device)
-                    mu, logvar, z = self.forward(x, c)
-                    loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
+                for batch in validloader:
+                    if len(batch) == 3:
+                        x, domain_id, _ = batch
+                    else:
+                        x, domain_id = batch
+
+                    x = x.to(device)
+                    domain_id = domain_id.to(device)
+
+                    c_domain = nn.functional.one_hot(
+                        domain_id, num_classes=self.cond_dim
+                    ).float().to(device)
+
+                    mu, logvar, z = self.forward(x, c_domain)
+                    loss, recon, kl = self.elbo_loss(
+                        x, mu, logvar, z, c_domain, beta
+                    )
+
                     val_loss += loss.item()
                     val_recon += recon.item()
                     val_kl += kl.item()
@@ -96,17 +267,20 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
             if (epoch + 1) % 10 == 0:
                 print(
                     f"Epoch {epoch+1}/{self.epochs} | "
-                    f"[Train] Loss: {train_loss:.4f} | Recon: {train_recon:.4f} | KL: {train_kl:.4f} || "
-                    f"[Val] Loss: {val_loss:.4f} | Recon: {val_recon:.4f} | KL: {val_kl:.4f}"
+                    f"[Train] Loss={train_loss:.4f} | Recon={train_recon:.4f} | KL={train_kl:.4f} || "
+                    f"[Val] Loss={val_loss:.4f} | Recon={val_recon:.4f} | KL={val_kl:.4f}"
                 )
 
-            # Early stopping
+            # =======================
+            #     EARLY STOPPING
+            # =======================
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_state = self.state_dict()
                 patience_counter = 0
             else:
                 patience_counter += 1
+
             if patience_counter >= self.patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break

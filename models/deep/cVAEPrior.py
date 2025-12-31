@@ -1,82 +1,116 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import torch.optim as optim
-from models.deep.networks import SpeciesConditionalEncoder, SpeciesDomainConditionalDecoder
+import torch.nn.functional as F
+from models.deep.networks import ConditionalEncoder, ConditionalDecoder, ConditionalPrior
 
 
-class CVAE_SpeciesDomain_Bernoulli(nn.Module):
+class ConditionalVAE_Bernoulli_SpeciesPrior(nn.Module):
     """
-    Conditional Variational Autoencoder with:
-    - Encoder: q(z | x, species)
-    - Decoder: p(x | z, species, domain)
+    Conditional Variational Autoencoder with a species-dependent latent prior.
+
+    - Encoder and decoder are conditioned on DOMAIN.
+    - Latent prior p(z | species) is conditioned on SPECIES.
     """
 
-    def __init__(self, input_dim, latent_dim, species_dim, domain_dim):
+    def __init__(self, input_dim, latent_dim, cond_dim, n_species):
         """
         Parameters
         ----------
         input_dim : int
-            Dimensionality of the input data.
+            Dimensionality of the input data x.
         latent_dim : int
-            Dimensionality of the latent space.
-        species_dim : int
-            Number of species.
-        domain_dim : int
-            Number of domains.
+            Dimensionality of the latent space z.
+        cond_dim : int
+            Number of domains used for conditioning.
+        n_species : int
+            Number of species used to parameterize the latent prior.
         """
         super().__init__()
-        self.encoder = SpeciesConditionalEncoder(
+        self.cond_dim = cond_dim
+
+        self.encoder = ConditionalEncoder(
             input_dim=input_dim,
             latent_dim=latent_dim,
-            species_dim=species_dim
+            cond_dim=cond_dim,
         )
-        self.decoder = SpeciesDomainConditionalDecoder(
+
+        self.decoder = ConditionalDecoder(
             latent_dim=latent_dim,
             output_dim=input_dim,
-            species_dim=species_dim,
-            domain_dim=domain_dim
+            cond_dim=cond_dim,
+        )
+
+        self.prior = ConditionalPrior(
+            n_species=n_species,
+            latent_dim=latent_dim,
         )
 
     def reparameterize(self, mu, logvar):
         """
-        Reparameterization trick to sample z ~ q(z | x, species).
+        Reparameterization trick to sample z ~ q(z | x, domain).
         """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward(self, x, species_onehot):
+    def forward(self, x, c_domain):
         """
-        Forward pass of the CVAE.
+        Forward pass through encoder and sampling step.
         """
-        mu, logvar = self.encoder(x, species_onehot)
-        z = self.reparameterize(mu, logvar)
-        return mu, logvar, z
+        mu_e, logvar_e = self.encoder(x, c_domain)
+        z = self.reparameterize(mu_e, logvar_e)
+        return mu_e, logvar_e, z
 
-    def elbo_loss(self, x, mu, logvar, z, species_onehot, domain_onehot, beta=1.0):
+    def elbo_loss(self, x, mu_e, logvar_e, z, c_domain, species_onehot, beta=1.0):
         """
-        Computes the ELBO loss.
+        Computes the ELBO with a species-conditional prior.
+
+        KL term: KL(q(z | x, domain) || p(z | species))
         """
-        RE = self.decoder.log_prob(x, z, species_onehot, domain_onehot)
-        KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+        RE = self.decoder.log_prob(x, z, c_domain)
+
+        mu_p, logvar_p = self.prior(species_onehot)
+
+        KL = -0.5 * torch.sum(
+            1
+            + (logvar_e - logvar_p)
+            - ((mu_e - mu_p) ** 2 + logvar_e.exp()) / logvar_p.exp(),
+            dim=1,
+        )
+
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
 
 
-class CVAE_SpeciesDomain_Bernoulli_Extended(CVAE_SpeciesDomain_Bernoulli):
+class ConditionalVAE_Bernoulli_SpeciesPrior_Extended(ConditionalVAE_Bernoulli_SpeciesPrior):
     """
-    Extended version including optimizer, training and validation loops,
-    KL annealing, early stopping, and loss tracking.
+    Extended training wrapper including optimizer, KL annealing,
+    early stopping and metric tracking.
     """
 
-    def __init__(self, input_dim, latent_dim, species_dim, domain_dim, lr=1e-4, epochs=100, patience=20, annealing_epochs=50):
-        super().__init__(input_dim, latent_dim, species_dim, domain_dim)
+    def __init__(
+        self,
+        input_dim,
+        latent_dim,
+        cond_dim,
+        n_species,
+        lr=1e-4,
+        epochs=100,
+        patience=20,
+        annealing_epochs=50,
+    ):
+        super().__init__(input_dim, latent_dim, cond_dim, n_species)
+        self.cond_dim = cond_dim
         self.lr = lr
         self.epochs = epochs
         self.patience = patience
         self.annealing_epochs = annealing_epochs
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
+
+        self.optimizer = optim.Adam(
+            self.parameters(), lr=self.lr, weight_decay=1e-5
+        )
+
         self.loss_during_training = []
         self.reconstruc_during_training = []
         self.KL_during_training = []
@@ -99,29 +133,24 @@ class CVAE_SpeciesDomain_Bernoulli_Extended(CVAE_SpeciesDomain_Bernoulli):
             self.train()
             total_loss, total_recon, total_kl = 0, 0, 0
 
-            for x, species_id, domain_id in trainloader:
+            for x, domain_id, species_id in trainloader:
                 x = x.to(device)
-                species_id = species_id.to(device)
                 domain_id = domain_id.to(device)
+                species_id = species_id.to(device)
 
-                species_onehot = F.one_hot(
+                c_domain = F.one_hot(domain_id, num_classes=self.cond_dim).float()
+                c_species = F.one_hot(
                     species_id,
-                    num_classes=self.encoder.net[0].in_features - x.shape[1]
-                ).float().to(device)
-
-                domain_onehot = F.one_hot(
-                    domain_id,
-                    num_classes=self.decoder.net[0].in_features -
-                    self.encoder.mu.out_features - species_onehot.shape[1]
-                ).float().to(device)
+                    num_classes=self.prior.embedding.num_embeddings
+                ).float()
 
                 self.optimizer.zero_grad()
-                mu, logvar, z = self.forward(x, species_onehot)
+                mu, logvar, z = self.forward(x, c_domain)
                 loss, recon, kl = self.elbo_loss(
                     x, mu, logvar, z,
-                    species_onehot,
-                    domain_onehot,
-                    beta
+                    c_domain=c_domain,
+                    species_onehot=c_species,
+                    beta=beta,
                 )
                 loss.backward()
                 self.optimizer.step()
@@ -141,25 +170,23 @@ class CVAE_SpeciesDomain_Bernoulli_Extended(CVAE_SpeciesDomain_Bernoulli):
             val_loss, val_recon, val_kl = 0, 0, 0
 
             with torch.no_grad():
-                for x, species_id, domain_id in validloader:
+                for x, domain_id, species_id in validloader:
                     x = x.to(device)
-                    species_id = species_id.to(device)
                     domain_id = domain_id.to(device)
+                    species_id = species_id.to(device)
 
-                    species_onehot = F.one_hot(
-                        species_id, num_classes=species_onehot.shape[1]
-                    ).float().to(device)
+                    c_domain = F.one_hot(domain_id, num_classes=self.cond_dim).float()
+                    c_species = F.one_hot(
+                        species_id,
+                        num_classes=self.prior.embedding.num_embeddings
+                    ).float()
 
-                    domain_onehot = F.one_hot(
-                        domain_id, num_classes=domain_onehot.shape[1]
-                    ).float().to(device)
-
-                    mu, logvar, z = self.forward(x, species_onehot)
+                    mu, logvar, z = self.forward(x, c_domain)
                     loss, recon, kl = self.elbo_loss(
                         x, mu, logvar, z,
-                        species_onehot,
-                        domain_onehot,
-                        beta
+                        c_domain=c_domain,
+                        species_onehot=c_species,
+                        beta=beta,
                     )
 
                     val_loss += loss.item()
@@ -177,8 +204,8 @@ class CVAE_SpeciesDomain_Bernoulli_Extended(CVAE_SpeciesDomain_Bernoulli):
             if (epoch + 1) % 10 == 0:
                 print(
                     f"Epoch {epoch+1}/{self.epochs} | "
-                    f"[Train] Loss: {train_loss:.4f} | Recon: {train_recon:.4f} | KL: {train_kl:.4f} || "
-                    f"[Val] Loss: {val_loss:.4f} | Recon: {val_recon:.4f} | KL: {val_kl:.4f}"
+                    f"[Train] Loss={train_loss:.4f} | Recon={train_recon:.4f} | KL={train_kl:.4f} || "
+                    f"[Val] Loss={val_loss:.4f} | Recon={val_recon:.4f} | KL={val_kl:.4f}"
                 )
 
             # =======================
@@ -190,6 +217,7 @@ class CVAE_SpeciesDomain_Bernoulli_Extended(CVAE_SpeciesDomain_Bernoulli):
                 patience_counter = 0
             else:
                 patience_counter += 1
+
             if patience_counter >= self.patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break

@@ -5,6 +5,11 @@ from models.deep.networks import Encoder, ConditionalDecoder
 
 
 class InvariantCVAESpecies_Bernoulli(nn.Module):
+    """
+    Invariant Conditional Variational Autoencoder (CVAE) with a Bernoulli likelihood,
+    conditioned on species information.
+    """
+
     def __init__(self, input_dim, latent_dim, n_species):
         super().__init__()
         self.n_species = n_species
@@ -27,35 +32,21 @@ class InvariantCVAESpecies_Bernoulli(nn.Module):
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
 
-class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
-    def __init__(
-        self,
-        input_dim,
-        latent_dim,
-        n_species,
-        lr=1e-4,
-        epochs=200,
-        patience=40,
-        annealing_epochs=100,
-    ):
-        super().__init__(input_dim, latent_dim, n_species)
 
+class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
+    def __init__(self, input_dim, latent_dim, n_species, lr=1e-4, epochs=200, patience=40, annealing_epochs=100):
+        super().__init__(input_dim, latent_dim, n_species)
         self.lr = lr
         self.epochs = epochs
         self.patience = patience
         self.annealing_epochs = annealing_epochs
-
-        self.optimizer = optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=1e-5
-        )
-
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
         self.loss_during_training = []
         self.reconstruc_during_training = []
         self.KL_during_training = []
 
     def trainloop(self, trainloader, validloader, device):
         self.to(device)
-
         best_val_loss = float("inf")
         patience_counter = 0
         best_state = None
@@ -63,26 +54,21 @@ class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
         for epoch in range(self.epochs):
             beta = min(1.0, (epoch + 1) / self.annealing_epochs)
 
-            # ---------- TRAIN ----------
+            # =======================
+            #        TRAIN
+            # =======================
             self.train()
             total_loss, total_recon, total_kl = 0, 0, 0
 
             for x, domain_id, species_id in trainloader:
                 x = x.to(device)
                 species_id = species_id.to(device)
-
-                c = nn.functional.one_hot(
-                    species_id, num_classes=self.n_species
-                ).float()
-
+                c = nn.functional.one_hot(species_id, num_classes=self.n_species).float()
                 self.optimizer.zero_grad()
-
                 mu, logvar, z = self.forward(x, c)
                 loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
-
                 loss.backward()
                 self.optimizer.step()
-
                 total_loss += loss.item()
                 total_recon += recon.item()
                 total_kl += kl.item()
@@ -91,7 +77,9 @@ class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
             train_recon = total_recon / len(trainloader)
             train_kl = total_kl / len(trainloader)
 
-            # ---------- VALID ----------
+            # =======================
+            #      VALIDATION
+            # =======================
             self.eval()
             val_loss, val_recon, val_kl = 0, 0, 0
 
@@ -99,14 +87,9 @@ class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
                 for x, domain_id, species_id in validloader:
                     x = x.to(device)
                     species_id = species_id.to(device)
-
-                    c = nn.functional.one_hot(
-                        species_id, num_classes=self.n_species
-                    ).float()
-
+                    c = nn.functional.one_hot(species_id, num_classes=self.n_species).float()
                     mu, logvar, z = self.forward(x, c)
                     loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
-
                     val_loss += loss.item()
                     val_recon += recon.item()
                     val_kl += kl.item()
@@ -126,18 +109,18 @@ class InvariantCVAESpecies_Bernoulli_Extended(InvariantCVAESpecies_Bernoulli):
                     f"[Val] Loss: {val_loss:.4f} | Recon: {val_recon:.4f} | KL: {val_kl:.4f}"
                 )
 
-            # ---------- EARLY STOP ----------
+            # =======================
+            #     EARLY STOPPING
+            # =======================
             if val_loss < best_val_loss:
                 best_val_loss = val_loss
                 best_state = self.state_dict()
                 patience_counter = 0
             else:
                 patience_counter += 1
-
             if patience_counter >= self.patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
 
         if best_state is not None:
             self.load_state_dict(best_state)
-

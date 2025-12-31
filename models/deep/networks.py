@@ -99,6 +99,57 @@ class ConditionalEncoder(nn.Module):
         return mu, logvar
 
 
+class SpeciesConditionalEncoder(nn.Module):
+    """
+    Species-conditional encoder implementing q(z | x, species).
+    """
+
+    def __init__(self, input_dim, latent_dim, species_dim):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            Dimensionality of the input data x.
+        latent_dim : int
+            Dimensionality of the latent space z.
+        species_dim : int
+            Dimensionality of the species one-hot vector.
+        """
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(input_dim + species_dim, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 256),
+            nn.ReLU()
+        )
+        self.mu = nn.Linear(256, latent_dim)
+        self.logvar = nn.Linear(256, latent_dim)
+
+    def forward(self, x, species_onehot):
+        """
+        Forward pass of the encoder.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data.
+        species_onehot : torch.Tensor
+            One-hot encoded species labels.
+
+        Returns
+        -------
+        mu : torch.Tensor
+            Mean of q(z | x, species).
+        logvar : torch.Tensor
+            Log-variance of q(z | x, species).
+        """
+        h = torch.cat([x, species_onehot], dim=1)
+        h = self.net(h)
+        mu = self.mu(h)
+        logvar = torch.clamp(self.logvar(h), -6, 6)
+        return mu, logvar
+
+
 # ============================================================
 #                       DECODERS
 # ============================================================
@@ -218,6 +269,57 @@ class ConditionalDecoder(nn.Module):
         return -F.binary_cross_entropy(theta, x, reduction="none").sum(dim=1)
 
 
+class SpeciesDomainConditionalDecoder(nn.Module):
+    """
+    Species- and domain-conditional decoder implementing p(x | z, species, domain).
+    """
+
+    def __init__(self, latent_dim, output_dim, species_dim, domain_dim):
+        """
+        Parameters
+        ----------
+        latent_dim : int
+            Dimensionality of the latent space z.
+        output_dim : int
+            Dimensionality of the reconstructed input x.
+        species_dim : int
+            Dimensionality of the species one-hot vector.
+        domain_dim : int
+            Dimensionality of the domain one-hot vector.
+        """
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim + species_dim + domain_dim, 256),
+            nn.ReLU(),
+            nn.Linear(256, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, output_dim),
+            nn.Sigmoid()
+        )
+
+    def forward(self, z, species_onehot, domain_onehot):
+        """
+        Forward pass of the decoder.
+        """
+        h = torch.cat([z, species_onehot, domain_onehot], dim=1)
+        return self.net(h)
+
+    def log_prob(self, x, z, species_onehot, domain_onehot):
+        """
+        Computes log p(x | z, species, domain) under a Bernoulli likelihood.
+        """
+        theta = self.forward(z, species_onehot, domain_onehot)
+
+        if torch.any(theta < 0) or torch.any(theta > 1) or torch.isnan(theta).any():
+            raise ValueError("Decoder output out of [0,1]")
+
+        if torch.any(x < 0) or torch.any(x > 1) or torch.isnan(x).any():
+            raise ValueError("Input x must be in [0,1] for Bernoulli decoder")
+
+        log_prob = -F.binary_cross_entropy(theta, x, reduction="none").sum(dim=1)
+        return log_prob
+
+
 # ============================================================
 #                 DANN-SPECIFIC MODULES
 # ============================================================
@@ -309,3 +411,41 @@ def grad_reverse(x: torch.Tensor, lambda_: float):
         Identity in forward pass, reversed gradients in backward
     """
     return GradientReversal.apply(x, lambda_)
+
+
+# ============================================================
+#                   CONDITIONAL PRIOR
+# ============================================================
+
+class ConditionalPrior(nn.Module):
+    """
+    Learnable Gaussian prior p(z | species).
+
+    One mean vector per species, shared (diagonal) variance.
+    """
+
+    def __init__(self, n_species: int, latent_dim: int):
+        super().__init__()
+        self.embedding = nn.Embedding(n_species, latent_dim)
+
+        # Shared learnable log-variance (more stable than per-species)
+        self.logvar = nn.Parameter(torch.zeros(latent_dim))
+
+    def forward(self, species_onehot: torch.Tensor):
+        """
+        Parameters
+        ----------
+        species_onehot : torch.Tensor
+            Shape (batch_size, n_species)
+
+        Returns
+        -------
+        mu_p, logvar_p : torch.Tensor
+            Parameters of p(z | species)
+        """
+        species_id = species_onehot.argmax(dim=1)
+        mu_p = self.embedding(species_id)
+        logvar_p = self.logvar.expand_as(mu_p)
+        return mu_p, logvar_p
+
+
