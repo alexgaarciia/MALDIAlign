@@ -366,12 +366,16 @@ class DomainClassifier(nn.Module):
     Domain discriminator used in DANN.
     """
 
-    def __init__(self, latent_dim: int, n_domains: int = 2):
+    def __init__(self, latent_dim, hidden_dim=256, n_domains=2):
         super().__init__()
-        self.classifier = nn.Linear(latent_dim, n_domains)
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, n_domains)
+        )
 
     def forward(self, z: torch.Tensor):
-        return self.classifier(z)
+        return self.net(z)
     
     
 class GradientReversal(Function):
