@@ -7,6 +7,8 @@ from models.deep.cVAEInvariantSpecies import InvariantCVAESpecies_Bernoulli_Exte
 from models.deep.cVAESpecies import SpeciesCVAE_Bernoulli_Extended
 from models.deep.mdvae_discriminative import DiscriminativeMultiDecoderVAE
 from models.deep.cVAEPrior import ConditionalVAE_Bernoulli_SpeciesPrior_Extended
+from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
+from models.deep.DANN import DANNFull_Extended
 
 
 def build_model(cfg: dict, input_dim: int):
@@ -129,6 +131,30 @@ def build_model(cfg: dict, input_dim: int):
             n_species=model_cfg["n_species"],   
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "vae_multidecoder_prior":
+        model = MultiVAE_Bernoulli_SpeciesPrior_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            n_species=model_cfg["n_species"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "dann":
+        model = DANNFull_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            n_species=model_cfg["n_species"],
+            n_domains=model_cfg.get("num_domains", 2),
+            source_domain_id=model_cfg.get("source_domain_id", 0),
+            epochs=training_cfg["epochs"],
+            lr=float(training_cfg["lr"]),
+            lambda_domain=float(model_cfg.get("lambda_domain", 0.01)),
             patience=training_cfg["patience"],
         )
 
