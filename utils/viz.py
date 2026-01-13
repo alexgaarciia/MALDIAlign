@@ -9,51 +9,99 @@ def plot_model_metrics(model, model_name, save=False, path=None):
     Plot training and validation losses for a VAE-like model.
     """
 
-    train_losses = [t[0] for t in model.loss_during_training]
-    train_recon = [t[0] for t in model.reconstruc_during_training]
-    train_kl = [t[0] for t in model.KL_during_training]
+    if hasattr(model, "reconstruc_during_training") and hasattr(model, "KL_during_training"):
+        train_losses = [t[0] for t in model.loss_during_training]
+        train_recon = [t[0] for t in model.reconstruc_during_training]
+        train_kl = [t[0] for t in model.KL_during_training]
 
-    val_losses = [t[1] for t in model.loss_during_training]
-    val_recon = [t[1] for t in model.reconstruc_during_training]
-    val_kl = [t[1] for t in model.KL_during_training]
+        val_losses = [t[1] for t in model.loss_during_training]
+        val_recon = [t[1] for t in model.reconstruc_during_training]
+        val_kl = [t[1] for t in model.KL_during_training]
 
-    epochs = range(1, len(train_losses) + 1)
+        epochs = range(1, len(train_losses) + 1)
 
-    # Training 
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs, train_losses, label="Total loss", linewidth=2)
-    plt.plot(epochs, train_recon, label="Reconstruction (MSE)", linestyle="--")
-    plt.plot(epochs, train_kl, label="KL divergence", linestyle=":")
-    plt.title(f"{model_name} Training Losses")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
+        # Training 
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, train_losses, label="Total loss", linewidth=2)
+        plt.plot(epochs, train_recon, label="Reconstruction (MSE)", linestyle="--")
+        plt.plot(epochs, train_kl, label="KL divergence", linestyle=":")
+        plt.title(f"{model_name} Training Losses")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
 
-    if save and path:
-        plt.savefig(path.parent / f"{path.name}_train.png")
-        plt.close()
-    else:
-        plt.show()
+        if save and path:
+            plt.savefig(path.parent / f"{path.name}_train.png")
+            plt.close()
+        else:
+            plt.show()
 
-    # Validation
-    plt.figure(figsize=(10, 6))
-    plt.plot(epochs, val_losses, label="Total loss", linewidth=2)
-    plt.plot(epochs, val_recon, label="Reconstruction (MSE)", linestyle="--")
-    plt.plot(epochs, val_kl, label="KL divergence", linestyle=":")
-    plt.title(f"{model_name} Validation Losses")
-    plt.xlabel("Epoch")
-    plt.ylabel("Loss")
-    plt.legend()
-    plt.grid(alpha=0.3)
-    plt.tight_layout()
-    if save and path:
-        plt.savefig(path.parent / f"{path.name}_val.png")
-        plt.close()
-    else:
-        plt.show()
-        
+        # Validation
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, val_losses, label="Total loss", linewidth=2)
+        plt.plot(epochs, val_recon, label="Reconstruction (MSE)", linestyle="--")
+        plt.plot(epochs, val_kl, label="KL divergence", linestyle=":")
+        plt.title(f"{model_name} Validation Losses")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.grid(alpha=0.3)
+        plt.tight_layout()
+        if save and path:
+            plt.savefig(path.parent / f"{path.name}_val.png")
+            plt.close()
+        else:
+            plt.show()
+
+    elif hasattr(model, "species_loss_during_training") and hasattr(model, "domain_loss_during_training"):
+        tr_loss = [t[0] for t in model.loss_during_training]
+        tr_sp = [t[0] for t in model.species_loss_during_training]
+        tr_dom = [t[0] for t in model.domain_loss_during_training]
+
+        va_loss = [t[1] for t in model.loss_during_training]
+        va_sp = [t[1] for t in model.species_loss_during_training]
+        va_dom = [t[1] for t in model.domain_loss_during_training]
+    
+        epochs = range(1, len(model.loss_during_training) + 1)
+
+        # Traininig
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, tr_loss, label="Total loss", linewidth=2)
+        plt.plot(epochs, tr_sp, "--", label="Species loss")
+        plt.plot(epochs, tr_dom, ":", label="Domain loss")
+
+        plt.title(f"{model_name} Training Losses")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.tight_layout()
+
+        if save and path:
+            plt.savefig(path.parent / f"{path.name}_train.png", dpi=300)
+            plt.close()
+        else:
+            plt.show()
+
+        # Validation
+        plt.figure(figsize=(10, 6))
+        plt.plot(epochs, va_loss, label="Total loss", linewidth=2)
+        plt.plot(epochs, va_sp, "--", label="Species loss")
+        plt.plot(epochs, va_dom, ":", label="Domain loss")
+
+        plt.title(f"{model_name} Validation Losses")
+        plt.xlabel("Epoch")
+        plt.ylabel("Loss")
+        plt.legend()
+        plt.tight_layout()
+
+        if save and path:
+            plt.savefig(path.parent / f"{path.name}_val.png", dpi=300)
+            plt.close()
+        else:
+            plt.show()
+
 
 def compute_tsne_df(X, labels, metadata):
     """

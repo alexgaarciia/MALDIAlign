@@ -5,28 +5,43 @@ from utils.viz import compute_tsne_df, compute_tsne_per_species, plot_tsne_globa
 
 def eval_model(model, dataloader, device, use_domain=False):
     """
-    Compute latent representations for all samples in a given dataloader.
+    Extract latent representations for all samples in a given dataloader.
 
-    This function runs the encoder in evaluation mode and extracts the
-    latent mean vectors (mu) for each input sample. It supports both
-    standard VAEs and conditional/multi-domain VAEs.
+    This function runs the model's encoder in evaluation mode and returns
+    a deterministic latent representation for each input sample. It supports
+    both probabilistic encoders (e.g. VAEs) and deterministic encoders
+    (e.g. Domain-Adversarial Neural Networks).
+
+    - For VAE-like models, the latent representation corresponds to the
+      posterior mean μ of q(z | x).
+    - For deterministic models (e.g. DANN), the latent representation
+      corresponds directly to the encoder output z.
+
+    Conditional encoders are also supported when `use_domain=True`.
 
     Parameters
     ----------
     model : torch.nn.Module
-        Trained VAE-like model with an encoder that returns (mu, logvar).
+        Trained model exposing an `encoder` module. The encoder may return
+        either:
+        - a tuple (mu, logvar) for probabilistic models, or
+        - a single tensor z for deterministic models.
     dataloader : torch.utils.data.DataLoader
-        DataLoader providing the input samples (and optionally domain IDs).
+        DataLoader providing batches of input samples. Each batch is expected
+        to be either:
+        - (x, domain_id, species_id), or
+        - (x, domain_id).
     device : torch.device
-        Device on which the model and data should be evaluated.
+        Device on which the model and data are evaluated.
     use_domain : bool, optional
-        If True, domain information is used as a conditional input to the
-        encoder (e.g., for conditional or multi-domain VAEs). Default is False.
+        If True and the model supports conditional encoding, domain information
+        is provided to the encoder as a one-hot conditioning vector.
+        Default is False.
 
     Returns
     -------
     mus_all : np.ndarray
-        Array of shape (N, latent_dim) containing the latent mean vectors
+        Array of shape (N, latent_dim) containing the latent representations
         for all samples in the dataloader.
     """
 
@@ -48,18 +63,25 @@ def eval_model(model, dataloader, device, use_domain=False):
             x = x.to(device)
 
             # Conditional encoder (domain-conditioned)
-            if use_domain:
+            if use_domain and hasattr(model, "cond_dim"):
                 domain_id = domain_id.to(device)
                 c = torch.nn.functional.one_hot(
                     domain_id,
                     num_classes=model.cond_dim
                 ).float().to(device)
 
-                mu, logvar = model.encoder(x, c)
+                mu, _ = model.encoder(x, c)
 
             # Plain encoder
             else:
-                mu, logvar = model.encoder(x)
+                enc_out = model.encoder(x)
+
+                if isinstance(enc_out, tuple):
+                    # VAE-style
+                    mu, _ = enc_out
+                else:
+                    # DANN-style
+                    mu = enc_out
 
             mus_all.append(mu.cpu().numpy())
 
