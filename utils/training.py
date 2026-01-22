@@ -1,5 +1,6 @@
 import inspect
 
+
 def train_model(model, train_loader, val_loader, device, species_weights=None):
     """
     Universal training wrapper that supports both weighted and unweighted models.
