@@ -423,33 +423,38 @@ def grad_reverse(x: torch.Tensor, lambda_: float):
 
 class ConditionalPrior(nn.Module):
     """
-    Learnable Gaussian prior p(z | species).
+    Species-conditional Gaussian prior p(z | species).
 
-    One mean vector per species, shared (diagonal) variance.
+    This module parameterizes a diagonal Gaussian prior whose parameters
+    (mean and log-variance) are conditioned on the bacterial species.
+    Each species is associated with its own learnable mean vector and
+    log-variance vector in the latent space.
+
+    The log-variance is clamped to a fixed range for numerical stability.
     """
 
     def __init__(self, n_species: int, latent_dim: int):
         super().__init__()
-        self.embedding = nn.Embedding(n_species, latent_dim)
-
-        # Shared learnable log-variance (more stable than per-species)
-        self.logvar = nn.Parameter(torch.zeros(latent_dim))
+        self.mu_embed = nn.Embedding(n_species, latent_dim)
+        self.logvar_embed = nn.Embedding(n_species, latent_dim)
 
     def forward(self, species_onehot: torch.Tensor):
         """
+        Compute the parameters of the conditional prior p(z | species).
+
         Parameters
         ----------
         species_onehot : torch.Tensor
-            Shape (batch_size, n_species)
+            One-hot encoded species labels of shape (batch_size, n_species).
 
         Returns
         -------
-        mu_p, logvar_p : torch.Tensor
-            Parameters of p(z | species)
+        mu_p : torch.Tensor
+            Mean of the species-conditional prior, shape (batch_size, latent_dim).
+        logvar_p : torch.Tensor
+            Log-variance of the species-conditional prior, shape (batch_size, latent_dim).
         """
         species_id = species_onehot.argmax(dim=1)
-        mu_p = self.embedding(species_id)
-        logvar_p = self.logvar.expand_as(mu_p)
+        mu_p = self.mu_embed(species_id)
+        logvar_p = torch.clamp(self.logvar_embed(species_id), -6, 6)
         return mu_p, logvar_p
-
-
