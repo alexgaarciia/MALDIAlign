@@ -23,6 +23,7 @@ class MultiVAE_Bernoulli_SpeciesPrior(MultiVAE_Bernoulli):
         )
 
     def elbo_loss(self, x, mu, logvar, z, domain_id, species_id, beta=1.0):
+        # Log-likelihood p(x|z,d)
         RE = self.decoder.log_prob(x, z, domain_id)
 
         # Build species one-hot
