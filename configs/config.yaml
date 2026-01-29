@@ -3,3 +3,4 @@ data:
   MARISMa_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/MARISMa_study.pkl"
   DRIAMS_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/DRIAMS_study.pkl"
   DRIAMS_REDUCED_PKL2: "/export/usuarios01/agnavarr/MALDIAlign/DRIAMS_study.pkl"
+  RKI_PKL: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/RKI_study_species.pkl"
