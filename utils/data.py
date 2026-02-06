@@ -13,7 +13,7 @@ from utils.config import load_config
 
 def verify_data_path(data_dir):
     """
-    Check whether a given path exists.
+    Check whether a given path exists and print the result.
 
     Parameters
     ----------
@@ -22,8 +22,9 @@ def verify_data_path(data_dir):
 
     Returns
     -------
-    bool
-        True if the path exists, False otherwise.
+    None
+        This function does not return anything. It only prints
+        whether the path exists or not.
     """
 
     if Path(data_dir).exists():
@@ -69,28 +70,28 @@ def load_pkl(pkl_file):
 
 def load_driams(driams_pkl, filter=None):
     """
-    Load the DRIAMS dataset from a PKL file. Optionally filter by a list of hospitals.
+    Load the DRIAMS dataset from a PKL file, optionally filtering by hospital.
 
     Parameters
     ----------
-    driams_pkl : str
+    driams_pkl : str or pathlib.Path
         Path to the PKL file containing the DRIAMS dataset.
-    filter : list[str] or None, optional
-        If provided, only the specified hospitals are returned.
-        Example: ["DRIAMS_A", "DRIAMS_D"].
-        If None, the entire dataset is returned.
+    filter : list of str or None, optional
+        List of hospital identifiers to keep (e.g. ["DRIAMS_A", "DRIAMS_D"]).
+        If None, the full dataset is returned.
 
     Returns
     -------
-    If filter is None:
-        data : np.ndarray
-        label : np.ndarray
-        meta : pd.DataFrame
+    dict
+        If filter is None:
+            {
+                "data": np.ndarray,
+                "label": np.ndarray,
+                "meta": pd.DataFrame
+            }
 
-    If filter is a list:
-        result : dict
-            Keys are hospital names.
-            Each value is a dict with:
+        If filter is provided:
+            Keys are hospital names and values are dictionaries with:
                 - "data": np.ndarray
                 - "label": np.ndarray
                 - "meta": pd.DataFrame
@@ -100,7 +101,11 @@ def load_driams(driams_pkl, filter=None):
     data, label, meta = driams["data"], driams["label"], pd.DataFrame.from_records(list(driams["meta"]))
 
     if filter is None:
-        return data, label, meta
+        return {
+            "data": data,
+            "label": label,
+            "meta": meta 
+        }
     
     result = {}
     for hosp in filter:
@@ -114,6 +119,85 @@ def load_driams(driams_pkl, filter=None):
         }
         
     return result
+
+
+def load_marisma(marisma_pkl):
+    """
+    Load the MARISMA dataset from a PKL file.
+
+    Parameters
+    ----------
+    marisma_pkl : str or pathlib.Path
+        Path to the PKL file containing the MARISMA dataset.
+
+    Returns
+    -------
+    dict
+        {
+            "data": np.ndarray,
+            "label": np.ndarray,
+            "meta": pd.DataFrame
+        }
+        The metadata includes a fixed 'hospital' column set to "MARISMA".
+    """
+
+    marisma = load_pkl(marisma_pkl)
+    data, label, meta = marisma["data"], marisma["label"], pd.DataFrame.from_records(list(marisma["meta"]))
+
+    meta.insert(
+        loc=0,
+        column="hospital",
+        value="MARISMA"
+    )
+
+    return {
+        "data": data, 
+        "label": label, 
+        "meta": meta
+    }
+
+
+def load_msumg(msumg_pkl):
+    """
+    Load the MS-UMG dataset from a PKL file.
+
+    Only samples grown on standard agar are retained.
+
+    Parameters
+    ----------
+    msumg_pkl : str or pathlib.Path
+        Path to the PKL file containing the MS-UMG dataset.
+
+    Returns
+    -------
+    dict
+        {
+            "data": np.ndarray,
+            "label": np.ndarray,
+            "meta": pd.DataFrame
+        }
+        The metadata includes a fixed 'hospital' column set to "MS-UMG".
+    """
+
+    msumg = load_pkl(msumg_pkl)
+    data, label, meta = msumg["data"], msumg["label"], pd.DataFrame.from_records(list(msumg["meta"]))
+
+    mask_agar = meta["agar_type"] == "agar"
+    data = data[mask_agar.values]
+    label = label[mask_agar.values]
+    meta = meta.loc[mask_agar].reset_index(drop=True)
+
+    meta.insert(
+        loc=0,
+        column="hospital",
+        value="MS-UMG"
+    )
+
+    return {
+        "data": data, 
+        "label": label, 
+        "meta": meta
+    }
 
 
 def map_domains(meta):
@@ -138,67 +222,45 @@ def map_domains(meta):
     return domain_ids
 
 
-def scale_data(X_train, X_val, prescaler=None):
-    """
-    Fit or load a StandardScaler and transform train and validation sets.
-
-    Parameters
-    ----------
-    X_train : np.ndarray
-        Training features.
-    X_val : np.ndarray
-        Validation features.
-    prescaler_path : str or None
-        Path to an existing scaler (.pkl). If provided, the scaler is loaded
-        and ONLY transform() is applied (no fitting).
-
-    Returns
-    -------
-    scaler : StandardScaler
-        The fitted or loaded scaler.
-    X_train_scaled : np.ndarray
-        Scaled training data.
-    X_val_scaled : np.ndarray
-        Scaled validation data.
-    """
-    
-    if prescaler is not None:
-        with open(prescaler, "rb") as file:
-            scaler = pickle.load(file)
-        X_train_scaled = scaler.transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
-    else:
-        scaler = StandardScaler()
-        X_train_scaled = scaler.fit_transform(X_train)
-        X_val_scaled = scaler.transform(X_val)
-
-    return scaler, X_train_scaled, X_val_scaled
-
-
 def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_train_tensor, domain_val_tensor, domain_all_tensor, batch_size, species_train_tensor=None, species_val_tensor=None, species_all_tensor=None):
     """
-    Build PyTorch DataLoaders for train and validation sets.
+    Construct PyTorch DataLoaders for training, validation and full datasets.
+
+    Optionally includes species labels for multi-task or conditional models.
 
     Parameters
     ----------
     X_train_tensor : torch.Tensor
-        Training data already converted to a float32 tensor.
+        Training feature tensor (float32).
     X_val_tensor : torch.Tensor
-        Validation data already converted to a float32 tensor.
+        Validation feature tensor (float32).
+    X_all_tensor : torch.Tensor
+        Feature tensor containing all samples.
     domain_train_tensor : torch.Tensor
-        Domain IDs for the training samples (long tensor).
+        Domain IDs for training samples (long).
     domain_val_tensor : torch.Tensor
-        Domain IDs for the validation samples (long tensor).
+        Domain IDs for validation samples (long).
+    domain_all_tensor : torch.Tensor
+        Domain IDs for all samples (long).
     batch_size : int
-        Batch size for both DataLoaders.
+        Batch size for training and validation loaders.
+    species_train_tensor : torch.Tensor or None, optional
+        Species labels for training samples.
+    species_val_tensor : torch.Tensor or None, optional
+        Species labels for validation samples.
+    species_all_tensor : torch.Tensor or None, optional
+        Species labels for all samples.
 
     Returns
     -------
-    train_loader : DataLoader
-        DataLoader containing (X_train_tensor, domain_train_tensor).
-    val_loader : DataLoader
-        DataLoader containing (X_val_tensor, domain_val_tensor).
+    train_loader : torch.utils.data.DataLoader
+        DataLoader for training data.
+    val_loader : torch.utils.data.DataLoader
+        DataLoader for validation data.
+    all_loader : torch.utils.data.DataLoader
+        DataLoader for the full dataset.
     """
+
     
 
     if species_train_tensor is None:
@@ -232,50 +294,38 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
 
 def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
     """
-    Load, preprocess, and split the DRIAMS dataset for either deep-learning
-    models or classical classifiers.
+    Load, preprocess, and split MALDI-TOF datasets across multiple domains.
 
-    This function performs the following steps:
-    - Loads the DRIAMS dataset from a pickle file defined in the project config.
-    - Optionally filters samples by a list of hospital domains.
-    - Concatenates data, labels, and metadata across selected domains.
-    - Applies row-wise normalization to each spectrum.
-    - Splits the dataset into training and validation sets with stratification
-      by species labels.
+    This function supports DRIAMS, MARISMA and MS-UMG datasets and can
+    return either PyTorch DataLoaders for deep-learning models or NumPy
+    arrays for classical machine-learning classifiers.
 
-    Depending on the value of `classification`, the function returns data in
-    different formats:
-
-    * If `classification=False` (default):
-        The function prepares PyTorch DataLoaders suitable for training and
-        evaluating deep-learning models (e.g. VAEs, cVAEs).
-
-    * If `classification=True`:
-        The function returns NumPy arrays suitable for training classical
-        machine-learning classifiers (e.g. Random Forests) using scikit-learn.
+    The preprocessing pipeline includes:
+    - Domain-wise data loading
+    - Dataset concatenation
+    - Row-wise spectral normalization
+    - Stratified train/validation split by species
 
     Parameters
     ----------
     domains : list of str, optional
-        List of hospital identifiers to include (e.g., ["DRIAMS_A", "DRIAMS_D"]).
-        If provided, only samples from these domains are used.
+        List of dataset/domain identifiers to include
+        (e.g. ["DRIAMS_A", "MARISMA", "MS-UMG"]).
     normalization : str, optional
-        Normalization strategy applied to the spectra.
-        Currently supported:
-        - "row_minmax": min-max normalization applied independently to each sample.
+        Normalization strategy applied to each spectrum.
+        Supported options:
+        - "row_minmax"
     test_size : float, optional
-        Fraction of the dataset used for validation.
+        Fraction of samples used for validation.
     seed : int, optional
-        Random seed used for reproducible train/validation splitting.
+        Random seed for reproducible splitting.
     batch_size : int, optional
-        Batch size used for the training and validation DataLoaders (deep-learning
-        mode only).
+        Batch size for DataLoaders (deep-learning mode only).
     use_species_weight : bool, optional
-        Whether to compute inverse-frequency species weights (deep-learning mode
-        only).
+        Whether to compute inverse-frequency species weights.
     classification : bool, optional
-        If True, return NumPy arrays for classical classifiers.
-        If False, return PyTorch DataLoaders for deep-learning models.
+        If True, return NumPy arrays for classical ML.
+        If False, return PyTorch DataLoaders.
 
     Returns
     -------
@@ -285,9 +335,9 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
                 "data_final": np.ndarray,
                 "label_final": np.ndarray,
                 "meta_final": pd.DataFrame,
-                "train_loader": torch.utils.data.DataLoader,
-                "val_loader": torch.utils.data.DataLoader,
-                "all_loader": torch.utils.data.DataLoader,
+                "train_loader": DataLoader,
+                "val_loader": DataLoader,
+                "all_loader": DataLoader,
                 "input_dim": int,
                 "species_weights": torch.Tensor or None
             }
@@ -295,32 +345,36 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         If classification=True:
             {
                 "X": np.ndarray,
-                    Normalized feature matrix for all samples.
                 "y": np.ndarray,
-                    Integer-encoded species labels.
                 "meta": pd.DataFrame,
-                    Metadata for all samples (e.g. hospital domain).
-                "class_names": np.ndarray,
-                    Array mapping label indices to species names.
+                "class_names": np.ndarray
             }
     """
 
-    # Load DRIAMS pickle file
     cfg = load_config()
-    driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL2"]
 
-    # Filter driams
-    driams = load_driams(driams_pkl, filter=domains)
     data, label, meta = [], [], []
     if domains:
         for d in domains:
-            data.append(driams[d]["data"])
-            label.append(driams[d]["label"])
-            meta.append(driams[d]["meta"])
+            if d.startswith("DRIAMS_"):
+                driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL2"]
+                center_data = load_driams(driams_pkl, filter=[d])[d]
+            elif d.startswith("MARISMA"):
+                marisma_pkl = cfg["data"]["MARISMa_REDUCED_PKL"]
+                center_data = load_marisma(marisma_pkl)
+            elif d.startswith("MS-UMG"):
+                msumg_pkl = cfg["data"]["MSUMG_PKL"]
+                center_data = load_msumg(msumg_pkl)
+
+            data.append(center_data["data"])
+            label.append(center_data["label"])
+            meta.append(center_data["meta"])
+            
         data_final = np.vstack(data)
         label_final = np.concatenate(label)
         meta_final  = pd.concat(meta, ignore_index=True)
     else:
+        driams = load_driams(driams_pkl, filter=domains)
         data_final, label_final, meta_final = driams
 
     # Normalize data
@@ -380,7 +434,6 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         inv_freq = 1.0 / counts
         normalized_weights = inv_freq / inv_freq.sum()
         species_weights = torch.tensor(normalized_weights, dtype=torch.float32)
-
 
     return {
         "data_final": data_final,
