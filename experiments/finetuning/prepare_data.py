@@ -69,6 +69,14 @@ rki = load_pkl(rki_pkl)
 data_driams, label_driams, meta_driams = driams["data"], driams["label"], pd.DataFrame.from_records(list(driams["meta"]))
 data_marisma, label_marisma, meta_marisma = marisma["data"], marisma["label"], pd.DataFrame.from_records(list(marisma["meta"]))
 data_msumg, label_msumg, meta_msumg = msumg["data"], msumg["label"], pd.DataFrame.from_records(list(msumg["meta"]))
+
+if "agar_type" in meta_msumg.columns:
+    mask_agar = meta_msumg["agar_type"] == "agar"
+
+    data_msumg = data_msumg[mask_agar.values]
+    label_msumg = label_msumg[mask_agar.values]
+    meta_msumg = meta_msumg.loc[mask_agar].reset_index(drop=True)
+    
 data_rki, label_rki, meta_rki = rki["data"], rki["label"], pd.DataFrame.from_records(list(rki["meta"]))
 
 meta_marisma.insert(0, "hospital", "MARISMA")
@@ -97,48 +105,26 @@ dataD, labelD, metaD = filtered_data["DRIAMS_D"]["data"], filtered_data["DRIAMS_
 # STRATIFIED SUBSAMPLING
 ############################
 print("\n===== STRATIFIED SUBSAMPLING =====")
-A_split = subsample_dataset_stratified(dataA, labelA, metaA, n_samples=500)
-B_split = subsample_dataset_stratified(dataB, labelB, metaB, n_samples=500)
-C_split = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=500)
-D_split = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=500)
-M_split = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=500)
+A_split = subsample_dataset_stratified(dataA, labelA, metaA, n_samples=200)
+B_split = subsample_dataset_stratified(dataB, labelB, metaB, n_samples=200)
+C_split = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=200)
+M_split = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=200)
 R_split = subsample_dataset_stratified(data_rki, label_rki, meta_rki, n_samples=200)
-MS_split = subsample_dataset_stratified(data_msumg, label_msumg, meta_msumg, n_samples=200)
-
-print("Anchor sizes:")
-print(
-    f"A:{len(A_split['selected']['idx'])} "
-    f"B:{len(B_split['selected']['idx'])} "
-    f"C:{len(C_split['selected']['idx'])} "
-    f"D:{len(D_split['selected']['idx'])} "
-    f"M:{len(M_split['selected']['idx'])} "
-    f"R:{len(R_split['selected']['idx'])} "
-    f"MS:{len(MS_split['selected']['idx'])}"
-)
-
-print("Base sizes:")
-print(
-    f"A:{len(A_split['rest']['idx'])} "
-    f"B:{len(B_split['rest']['idx'])} "
-    f"C:{len(C_split['rest']['idx'])} "
-    f"D:{len(D_split['rest']['idx'])} "
-    f"M:{len(M_split['rest']['idx'])} "
-    f"R:{len(R_split['rest']['idx'])} "
-    f"MS:{len(MS_split['rest']['idx'])}"
-)
+D_split = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=1000, ood=True)
+MS_split = subsample_dataset_stratified(data_msumg, label_msumg, meta_msumg, n_samples=1000, ood=True)
 
 
 ############################
 # SAVE SPLITS
 ############################
 splits_idx = {
-    "DRIAMS_A": {"base": A_split["rest"]["idx"], "anchor": A_split["selected"]["idx"]},
-    "DRIAMS_B": {"base": B_split["rest"]["idx"], "anchor": B_split["selected"]["idx"]},
-    "DRIAMS_C": {"base": C_split["rest"]["idx"], "anchor": C_split["selected"]["idx"]},
-    "DRIAMS_D": {"base": D_split["rest"]["idx"], "anchor": D_split["selected"]["idx"]},
-    "MARISMA": {"base": M_split["rest"]["idx"], "anchor": M_split["selected"]["idx"]},
-    "RKI": {"base": R_split["rest"]["idx"], "anchor": R_split["selected"]["idx"]},
-    "MS-UMG": {"base": MS_split["rest"]["idx"], "anchor": MS_split["selected"]["idx"]},
+    "DRIAMS_A": {"finetuning": A_split["finetuning"]["idx"]},
+    "DRIAMS_B": {"finetuning": B_split["finetuning"]["idx"]},
+    "DRIAMS_C": {"finetuning": C_split["finetuning"]["idx"]},
+    "MARISMA": {"finetuning": M_split["finetuning"]["idx"]},
+    "RKI": {"finetuning": R_split["finetuning"]["idx"]},
+    "DRIAMS_D": {"finetuning": D_split["finetuning"]["idx"], "test": D_split["test"]["idx"]},
+    "MS-UMG": {"finetuning": MS_split["finetuning"]["idx"], "test": MS_split["test"]["idx"]}
 }
 
 print("\n===== SAVING SPLITS & DATA =====")

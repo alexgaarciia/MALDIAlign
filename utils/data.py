@@ -294,9 +294,7 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
         DataLoader for validation data.
     all_loader : torch.utils.data.DataLoader
         DataLoader for the full dataset.
-    """
-
-    
+    """ 
 
     if species_train_tensor is None:
         train_dataset = TensorDataset(X_train_tensor, domain_train_tensor)
@@ -327,20 +325,12 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
     return train_loader, val_loader, all_loader
 
 
-def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False, finetuning=False, splits_idx_path=None):
+def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
     """
     Load, preprocess and split MALDI-TOF datasets across multiple domains.
 
-    This function supports two modes:
-
-    1) Standard training mode (finetuning=False)
-       - All samples from the selected domains are used.
-       - A stratified train/validation split is performed by species.
-
-    2) Finetuning base mode (finetuning=True)
-       - Requires a precomputed splits_idx.pkl file.
-       - Only samples labeled as "base" are used.
-       - Train/validation split is performed within the base subset.
+    All samples from the selected domains are loaded and concatenated.
+    A stratified train/validation split is performed by species.
 
     Parameters
     ----------
@@ -359,16 +349,12 @@ def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, ba
         Whether to compute inverse-frequency species weights.
     classification : bool
         If True, returns NumPy arrays instead of DataLoaders.
-    finetuning : bool
-        Whether to use only "base" samples from a predefined split.
-    splits_idx_path : str or Path, optional
-        Path to splits_idx.pkl (required if finetuning=True).
 
     Returns
     -------
     dict
         Dictionary containing:
-        - data_final : np.ndarray (original, non-normalized data)
+        - data_final : np.ndarray (original data)
         - label_final : np.ndarray (original labels)
         - meta_final : pd.DataFrame
         - train_loader : DataLoader
@@ -379,13 +365,6 @@ def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, ba
     """
 
     cfg = load_config()
-
-    if finetuning:
-        if splits_idx_path is None:
-            raise ValueError("finetuning=True requires splits_idx_path")
-
-        with open(splits_idx_path, "rb") as f:
-            splits_idx = pickle.load(f)
 
     data_list, label_list, meta_list = [], [], []
 
@@ -402,16 +381,9 @@ def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, ba
         else:
             raise ValueError(f"Unknown domain: {d}")
 
-        if finetuning:
-            idx_base = splits_idx[d]["base"]
-            data_list.append(center["data"][idx_base])
-            label_list.append(center["label"][idx_base])
-            meta_list.append(center["meta"].iloc[idx_base])
-
-        else:
-            data_list.append(center["data"])
-            label_list.append(center["label"])
-            meta_list.append(center["meta"])
+        data_list.append(center["data"])
+        label_list.append(center["label"])
+        meta_list.append(center["meta"])
 
     data_final = np.vstack(data_list)
     label_final = np.concatenate(label_list)
@@ -495,43 +467,51 @@ def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, ba
     }
 
 
-def subsample_dataset_stratified(data, labels, meta, n_samples):
+def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
     """
-    Perform stratified subsampling of a dataset by species.
+    Stratified subsampling by species for finetuning experiments.
 
-    This function selects `n_samples` instances while preserving
-    the class distribution (species) using StratifiedShuffleSplit.
+    Two operating modes are supported:
 
-    The selected subset can be used as anchor samples for finetuning,
-    while the remaining samples form the base set.
+    1) ood = False  (domain already seen by the multidecoder)
+       - Randomly selects `n_samples` (stratified by species)
+       - Returns ONLY the finetuning subset
+
+    2) ood = True   (out-of-distribution domain)
+       - Randomly selects `n_samples` (stratified by species) for finetuning
+       - The remaining samples are returned as test set
 
     Parameters
     ----------
     data : np.ndarray
-        Feature matrix.
+        Feature matrix of shape (n_samples_total, n_features).
     labels : np.ndarray
         Species labels.
     meta : pd.DataFrame
         Metadata corresponding to the samples.
     n_samples : int
-        Number of samples to select.
+        Number of samples to select for finetuning.
+    ood : bool, default=False
+        If True, also returns the remaining samples as test set.
 
     Returns
     -------
     dict
+
+        If ood=False:
         {
-            "selected": {
-                "data": np.ndarray,
-                "label": np.ndarray,
-                "meta": pd.DataFrame,
-                "idx": np.ndarray
-            },
-            "rest": {
+            "finetuning": {
                 "data": np.ndarray,
                 "label": np.ndarray,
                 "meta": pd.DataFrame,
                 "idx": np.ndarray
             }
+        }
+
+        If ood=True:
+        {
+            "finetuning": {...},
+            "test": {...}
         }
     """
 
@@ -544,21 +524,29 @@ def subsample_dataset_stratified(data, labels, meta, n_samples):
         random_state=42
     )
 
-    _, idx_sel = next(splitter.split(data, labels))
-    idx_sel = np.sort(idx_sel)
-    idx_rest = np.setdiff1d(np.arange(n_total), idx_sel)
+    idx_rest, idx_finetuning = next(splitter.split(data, labels))
+    idx_rest, idx_finetuning = np.sort(idx_rest), np.sort(idx_finetuning)
+
+    finetuning_dict = {
+        "data": data[idx_finetuning],
+        "label": labels[idx_finetuning],
+        "meta": meta.iloc[idx_finetuning].reset_index(drop=True),
+        "idx": idx_finetuning
+    }
+
+    if not ood:
+        return {
+            "finetuning": finetuning_dict
+        }
+
+    test_dict = {
+        "data": data[idx_rest],
+        "label": labels[idx_rest],
+        "meta": meta.iloc[idx_rest].reset_index(drop=True),
+        "idx": idx_rest
+    }
 
     return {
-        "selected": {
-            "data": data[idx_sel],
-            "label": labels[idx_sel],
-            "meta": meta.iloc[idx_sel].reset_index(drop=True),
-            "idx": idx_sel
-        },
-        "rest": {
-            "data": data[idx_rest],
-            "label": labels[idx_rest],
-            "meta": meta.iloc[idx_rest].reset_index(drop=True),
-            "idx": idx_rest
-        }
+        "finetuning": finetuning_dict,
+        "test": test_dict
     }
