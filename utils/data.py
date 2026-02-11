@@ -546,7 +546,7 @@ def subsample_dataset_stratified(data, labels, meta, n_samples):
 
     _, idx_sel = next(splitter.split(data, labels))
     idx_sel = np.sort(idx_sel)
-    idx_rest = np.setdifff1d(np.arange(n_total), idx_sel)
+    idx_rest = np.setdiff1d(np.arange(n_total), idx_sel)
 
     return {
         "selected": {
