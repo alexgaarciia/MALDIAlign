@@ -3,7 +3,7 @@ import numpy as np
 import pandas as pd
 
 from pathlib import Path
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedShuffleSplit
 
 import torch
 from torch.utils.data import TensorDataset, DataLoader
@@ -199,6 +199,42 @@ def load_msumg(msumg_pkl):
     }
 
 
+def load_rki(rki_pkl):
+    """
+    Load the RKI dataset from a PKL file.
+
+    Parameters
+    ----------
+    rki_pkl : str or pathlib.Path
+        Path to the PKL file containing the RKI dataset.
+
+    Returns
+    -------
+    dict
+        {
+            "data": np.ndarray,
+            "label": np.ndarray,
+            "meta": pd.DataFrame
+        }
+        The metadata includes a fixed 'hospital' column set to "RKI".
+    """
+
+    rki = load_pkl(rki_pkl)
+    data, label, meta = rki["data"], rki["label"], pd.DataFrame.from_records(list(rki["meta"]))
+
+    meta.insert(
+        loc=0,
+        column="hospital",
+        value="RKI"
+    )
+
+    return {
+        "data": data, 
+        "label": label, 
+        "meta": meta
+    }
+
+
 def map_domains(meta):
     """
     Map each hospital to a unique integer domain ID.
@@ -291,96 +327,109 @@ def construct_dataloaders(X_train_tensor, X_val_tensor, X_all_tensor, domain_tra
     return train_loader, val_loader, all_loader
 
 
-def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
+def prepare_data(domains, normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False, finetuning=False, splits_idx_path=None):
     """
-    Load, preprocess, and split MALDI-TOF datasets across multiple domains.
+    Load, preprocess and split MALDI-TOF datasets across multiple domains.
 
-    This function supports DRIAMS, MARISMA and MS-UMG datasets and can
-    return either PyTorch DataLoaders for deep-learning models or NumPy
-    arrays for classical machine-learning classifiers.
+    This function supports two modes:
 
-    The preprocessing pipeline includes:
-    - Domain-wise data loading
-    - Dataset concatenation
-    - Row-wise spectral normalization
-    - Stratified train/validation split by species
+    1) Standard training mode (finetuning=False)
+       - All samples from the selected domains are used.
+       - A stratified train/validation split is performed by species.
+
+    2) Finetuning base mode (finetuning=True)
+       - Requires a precomputed splits_idx.pkl file.
+       - Only samples labeled as "base" are used.
+       - Train/validation split is performed within the base subset.
 
     Parameters
     ----------
-    domains : list of str, optional
-        List of dataset/domain identifiers to include
-        (e.g. ["DRIAMS_A", "MARISMA", "MS-UMG"]).
-    normalization : str, optional
-        Normalization strategy applied to each spectrum.
-        Supported options:
-        - "row_minmax"
-    test_size : float, optional
-        Fraction of samples used for validation.
-    seed : int, optional
-        Random seed for reproducible splitting.
-    batch_size : int, optional
-        Batch size for DataLoaders (deep-learning mode only).
-    use_species_weight : bool, optional
+    domains : list[str]
+        List of domain identifiers (e.g. ["DRIAMS_A", "MARISMA"]).
+    normalization : str
+        Normalization strategy. Currently supports:
+        - "row_minmax" : per-spectrum min-max scaling.
+    test_size : float
+        Fraction of data used for validation split.
+    seed : int
+        Random seed for reproducibility.
+    batch_size : int
+        Batch size for DataLoaders.
+    use_species_weight : bool
         Whether to compute inverse-frequency species weights.
-    classification : bool, optional
-        If True, return NumPy arrays for classical ML.
-        If False, return PyTorch DataLoaders.
+    classification : bool
+        If True, returns NumPy arrays instead of DataLoaders.
+    finetuning : bool
+        Whether to use only "base" samples from a predefined split.
+    splits_idx_path : str or Path, optional
+        Path to splits_idx.pkl (required if finetuning=True).
 
     Returns
     -------
     dict
-        If classification=False:
-            {
-                "data_final": np.ndarray,
-                "label_final": np.ndarray,
-                "meta_final": pd.DataFrame,
-                "train_loader": DataLoader,
-                "val_loader": DataLoader,
-                "all_loader": DataLoader,
-                "input_dim": int,
-                "species_weights": torch.Tensor or None
-            }
-
-        If classification=True:
-            {
-                "X": np.ndarray,
-                "y": np.ndarray,
-                "meta": pd.DataFrame,
-                "class_names": np.ndarray
-            }
+        Dictionary containing:
+        - data_final : np.ndarray (original, non-normalized data)
+        - label_final : np.ndarray (original labels)
+        - meta_final : pd.DataFrame
+        - train_loader : DataLoader
+        - val_loader : DataLoader
+        - all_loader : DataLoader
+        - input_dim : int
+        - species_weights : torch.Tensor or None
     """
 
     cfg = load_config()
 
-    data, label, meta = [], [], []
-    if domains:
-        for d in domains:
-            if d.startswith("DRIAMS_"):
-                driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL2"]
-                center_data = load_driams(driams_pkl, filter=[d])[d]
-            elif d.startswith("MARISMA"):
-                marisma_pkl = cfg["data"]["MARISMa_REDUCED_PKL"]
-                center_data = load_marisma(marisma_pkl)
-            elif d.startswith("MS-UMG"):
-                msumg_pkl = cfg["data"]["MSUMG_PKL"]
-                center_data = load_msumg(msumg_pkl)
+    if finetuning:
+        if splits_idx_path is None:
+            raise ValueError("finetuning=True requires splits_idx_path")
 
-            data.append(center_data["data"])
-            label.append(center_data["label"])
-            meta.append(center_data["meta"])
-            
-        data_final = np.vstack(data)
-        label_final = np.concatenate(label)
-        meta_final  = pd.concat(meta, ignore_index=True)
+        with open(splits_idx_path, "rb") as f:
+            splits_idx = pickle.load(f)
+
+    data_list, label_list, meta_list = [], [], []
+
+    for d in domains:
+        if d.startswith("DRIAMS_"):
+            driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL"]
+            center = load_driams(driams_pkl, filter=[d])[d]
+        elif d == "MARISMA":
+            center = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
+        elif d == "MS-UMG":
+            center = load_msumg(cfg["data"]["MSUMG_PKL"])
+        elif d == "RKI":
+            center = load_rki(cfg["data"]["RKI_PKL"])
+        else:
+            raise ValueError(f"Unknown domain: {d}")
+
+        if finetuning:
+            idx_base = splits_idx[d]["base"]
+            data_list.append(center["data"][idx_base])
+            label_list.append(center["label"][idx_base])
+            meta_list.append(center["meta"].iloc[idx_base])
+
+        else:
+            data_list.append(center["data"])
+            label_list.append(center["label"])
+            meta_list.append(center["meta"])
+
+    data_final = np.vstack(data_list)
+    label_final = np.concatenate(label_list)
+    meta_final = pd.concat(meta_list, ignore_index=True)
+
+    if "year" in meta_final.columns:
+        meta_final["year"] = (
+            meta_final["year"]
+            .astype(str)
+            .replace("nan", "Unknown")
+        )
     else:
-        driams = load_driams(driams_pkl, filter=domains)
-        data_final, label_final, meta_final = driams
+        meta_final["year"] = "Unknown"
 
     # Normalize data
     if normalization == "row_minmax":
         data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (
-            data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8
-        )
+            data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8)
     else:
         data_norm = data_final
 
@@ -443,4 +492,73 @@ def prepare_data(domains=["DRIAMS_A", "DRIAMS_D"], normalization="row_minmax", t
         "all_loader": all_loader,
         "input_dim": data_final.shape[1],
         "species_weights": species_weights
+    }
+
+
+def subsample_dataset_stratified(data, labels, meta, n_samples):
+    """
+    Perform stratified subsampling of a dataset by species.
+
+    This function selects `n_samples` instances while preserving
+    the class distribution (species) using StratifiedShuffleSplit.
+
+    The selected subset can be used as anchor samples for finetuning,
+    while the remaining samples form the base set.
+
+    Parameters
+    ----------
+    data : np.ndarray
+        Feature matrix.
+    labels : np.ndarray
+        Species labels.
+    meta : pd.DataFrame
+        Metadata corresponding to the samples.
+    n_samples : int
+        Number of samples to select.
+
+    Returns
+    -------
+    dict
+        {
+            "selected": {
+                "data": np.ndarray,
+                "label": np.ndarray,
+                "meta": pd.DataFrame,
+                "idx": np.ndarray
+            },
+            "rest": {
+                "data": np.ndarray,
+                "label": np.ndarray,
+                "meta": pd.DataFrame,
+                "idx": np.ndarray
+            }
+        }
+    """
+
+    n_total = len(data)
+    n_samples = min(n_samples, n_total)
+
+    splitter = StratifiedShuffleSplit(
+        n_splits=1,
+        test_size=n_samples,
+        random_state=42
+    )
+
+    _, idx_sel = next(splitter.split(data, labels))
+    idx_sel = np.sort(idx_sel)
+    idx_rest = np.setdifff1d(np.arange(n_total), idx_sel)
+
+    return {
+        "selected": {
+            "data": data[idx_sel],
+            "label": labels[idx_sel],
+            "meta": meta.iloc[idx_sel].reset_index(drop=True),
+            "idx": idx_sel
+        },
+        "rest": {
+            "data": data[idx_rest],
+            "label": labels[idx_rest],
+            "meta": meta.iloc[idx_rest].reset_index(drop=True),
+            "idx": idx_rest
+        }
     }
