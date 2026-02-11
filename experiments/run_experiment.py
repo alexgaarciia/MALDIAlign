@@ -85,7 +85,7 @@ def main():
     # Load data
     print("\n===== Loading and preparing data =====")
     data_cfg = cfg["data"]
-    data = prepare_data(domains=data_cfg["domains"], normalization=data_cfg["normalization"], test_size=data_cfg["test_size"], batch_size=data_cfg["batch_size"], use_species_weight=data_cfg["use_species_weights"])
+    data = prepare_data(domains=data_cfg["domains"], normalization=data_cfg.get("normalization", "row_minmax"), test_size=data_cfg.get("test_size", 0.2), batch_size=data_cfg.get("batch_size", 64), use_species_weight=data_cfg.get("use_species_weights", False), finetuning=data_cfg.get("finetuning", False), splits_idx_path=data_cfg.get("splits_path", None))
     data_final, label_final, meta_final, train_loader, val_loader, all_loader, in_dim, species_weights = data["data_final"], data["label_final"], data["meta_final"], data["train_loader"], data["val_loader"], data["all_loader"], data["input_dim"], data["species_weights"]
 
     # Build model
