@@ -64,7 +64,7 @@ def print_metrics(metrics, logs=False, save=False, path=None):
 
     # Plot confusion metrics with labels
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=class_names)
-    disp.plot(cmap="Blues", xticks_rotation=45)
+    disp.plot(cmap="Blues", xticks_rotation=45, values_format="d")
 
     plt.xticks(rotation=45, ha='right', fontsize=8)
     plt.yticks(fontsize=8)
