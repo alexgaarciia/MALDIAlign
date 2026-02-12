@@ -94,10 +94,7 @@ data_msumg = row_minmax_normalize(data_msumg)
 ####################
 print("Loading finetuning indices...")
 
-with open(
-    "/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260211_151606/splits_idx.pkl",
-    "rb"
-) as f:
+with open("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260212_222230/splits_idx.pkl", "rb") as f:
     splits_idx = pickle.load(f)
 
 def select(data, label, meta, idx):

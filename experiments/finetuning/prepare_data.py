@@ -114,8 +114,8 @@ C_split  = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=200)
 M_split  = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=200)
 R_split  = subsample_dataset_stratified(data_rki, label_rki, meta_rki, n_samples=200)
 
-D_split  = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=1000, ood=True)
-MS_split = subsample_dataset_stratified(data_msumg, label_msumg, meta_msumg, n_samples=1000, ood=True)
+D_split  = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=500, ood=True)
+MS_split = subsample_dataset_stratified(data_msumg, label_msumg, meta_msumg, n_samples=500, ood=True)
 
 
 ############################
