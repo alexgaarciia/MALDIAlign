@@ -499,53 +499,71 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
     """
     Stratified subsampling by species for finetuning experiments.
 
-    Two operating modes are supported:
+    If ood=False:
+        Returns only the finetuning subset.
 
-    1) ood = False  (domain already seen by the multidecoder)
-       - Randomly selects `n_samples` (stratified by species)
-       - Returns ONLY the finetuning subset
-
-    2) ood = True   (out-of-distribution domain)
-       - Randomly selects `n_samples` (stratified by species) for finetuning
-       - The remaining samples are returned as test set
-
-    Parameters
-    ----------
-    data : np.ndarray
-        Feature matrix of shape (n_samples_total, n_features).
-    labels : np.ndarray
-        Species labels.
-    meta : pd.DataFrame
-        Metadata corresponding to the samples.
-    n_samples : int
-        Number of samples to select for finetuning.
-    ood : bool, default=False
-        If True, also returns the remaining samples as test set.
-
-    Returns
-    -------
-    dict
-
-        If ood=False:
-        {
-            "finetuning": {
-                "data": np.ndarray,
-                "label": np.ndarray,
-                "meta": pd.DataFrame,
-                "idx": np.ndarray
-            }
-        }
-
-        If ood=True:
-        {
-            "finetuning": {...},
-            "test": {...}
-        }
+    If ood=True:
+        Returns finetuning subset + remaining samples as test set.
     """
 
     n_total = len(data)
     n_samples = min(n_samples, n_total)
 
+    # -------------------------------------------------
+    # CASE 1: n_samples == 0
+    # -------------------------------------------------
+    if n_samples == 0:
+        finetuning_dict = {
+            "data": np.empty((0, data.shape[1])),
+            "label": np.empty((0,), dtype=labels.dtype),
+            "meta": meta.iloc[[]].reset_index(drop=True),
+            "idx": np.array([], dtype=int)
+        }
+
+        if not ood:
+            return {"finetuning": finetuning_dict}
+
+        test_dict = {
+            "data": data,
+            "label": labels,
+            "meta": meta.reset_index(drop=True),
+            "idx": np.arange(n_total)
+        }
+
+        return {
+            "finetuning": finetuning_dict,
+            "test": test_dict
+        }
+
+    # -------------------------------------------------
+    # CASE 2: n_samples == n_total
+    # -------------------------------------------------
+    if n_samples == n_total:
+        finetuning_dict = {
+            "data": data,
+            "label": labels,
+            "meta": meta.reset_index(drop=True),
+            "idx": np.arange(n_total)
+        }
+
+        if not ood:
+            return {"finetuning": finetuning_dict}
+
+        test_dict = {
+            "data": np.empty((0, data.shape[1])),
+            "label": np.empty((0,), dtype=labels.dtype),
+            "meta": meta.iloc[[]].reset_index(drop=True),
+            "idx": np.array([], dtype=int)
+        }
+
+        return {
+            "finetuning": finetuning_dict,
+            "test": test_dict
+        }
+
+    # -------------------------------------------------
+    # NORMAL CASE: 0 < n_samples < n_total
+    # -------------------------------------------------
     splitter = StratifiedShuffleSplit(
         n_splits=1,
         test_size=n_samples,
@@ -563,9 +581,7 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
     }
 
     if not ood:
-        return {
-            "finetuning": finetuning_dict
-        }
+        return {"finetuning": finetuning_dict}
 
     test_dict = {
         "data": data[idx_rest],

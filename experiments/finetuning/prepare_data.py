@@ -4,6 +4,7 @@
 import os
 import sys
 import pickle
+import numpy as np
 from pathlib import Path
 from datetime import datetime
 
@@ -100,6 +101,40 @@ dataB, labelB, metaB = data_driams[maskB], label_driams[maskB], meta_driams[mask
 dataC, labelC, metaC = data_driams[maskC], label_driams[maskC], meta_driams[maskC]
 dataD, labelD, metaD = data_driams[maskD], label_driams[maskD], meta_driams[maskD]
 
+# Here we define what we will be using for "evaluation" and for "finetuning"
+D_full_split = subsample_dataset_stratified(
+    dataD,
+    labelD,
+    metaD,
+    n_samples = 250,
+    ood=True
+)
+
+# Pool for finetuning and evaluation
+D_pool_idx = D_full_split["finetuning"]["idx"]
+D_eval_idx = D_full_split["test"]["idx"]
+
+# Extract data
+dataD_pool  = dataD[D_pool_idx]
+labelD_pool = labelD[D_pool_idx]
+metaD_pool  = metaD.iloc[D_pool_idx].reset_index(drop=True)
+
+# Same for MS-UMG
+MSUMG_full_split = subsample_dataset_stratified(
+    data_msumg,
+    label_msumg,
+    meta_msumg,
+    n_samples = 250,
+    ood=True
+)
+
+MSUMG_pool_idx = MSUMG_full_split["finetuning"]["idx"]
+MSUMG_eval_idx = MSUMG_full_split["test"]["idx"]
+
+data_msumg_pool  = data_msumg[MSUMG_pool_idx]
+label_msumg_pool = label_msumg[MSUMG_pool_idx]
+meta_msumg_pool  = meta_msumg.iloc[MSUMG_pool_idx].reset_index(drop=True)
+
 print("\n===== DATA LOADED =====")
 
 
@@ -108,39 +143,58 @@ print("\n===== DATA LOADED =====")
 ############################
 print("\n===== STRATIFIED SUBSAMPLING =====")
 
-A_split  = subsample_dataset_stratified(dataA, labelA, metaA, n_samples=200)
-B_split  = subsample_dataset_stratified(dataB, labelB, metaB, n_samples=200)
-C_split  = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=200)
-M_split  = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=200)
-R_split  = subsample_dataset_stratified(data_rki, label_rki, meta_rki, n_samples=200)
-
-D_split  = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=500, ood=True)
-MS_split = subsample_dataset_stratified(data_msumg, label_msumg, meta_msumg, n_samples=500, ood=True)
-
-
-############################
-# SAVE SPLITS
-############################
-splits_idx = {
-    "DRIAMS_A": {"finetuning": A_split["finetuning"]["idx"]},
-    "DRIAMS_B": {"finetuning": B_split["finetuning"]["idx"]},
-    "DRIAMS_C": {"finetuning": C_split["finetuning"]["idx"]},
-    "MARISMA":  {"finetuning": M_split["finetuning"]["idx"]},
-    "RKI":      {"finetuning": R_split["finetuning"]["idx"]},
-    "DRIAMS_D": {
-        "finetuning": D_split["finetuning"]["idx"],
-        "test": D_split["test"]["idx"],
-    },
-    "MS-UMG": {
-        "finetuning": MS_split["finetuning"]["idx"],
-        "test": MS_split["test"]["idx"],
-    },
-}
+grid_prev = np.arange(0, 251, 50)
+grid_new = np.arange(50, 251, 50)
 
 print("\n===== SAVING SPLITS & DATA =====")
+for n_prev in grid_prev:
+    # Previous domains
+    A_split  = subsample_dataset_stratified(dataA, labelA, metaA, n_samples=n_prev)
+    B_split  = subsample_dataset_stratified(dataB, labelB, metaB, n_samples=n_prev)
+    C_split  = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=n_prev)
+    M_split  = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=n_prev)
+    R_split  = subsample_dataset_stratified(data_rki, label_rki, meta_rki, n_samples=n_prev)
 
-with open(experiment_dir / "splits_idx.pkl", "wb") as f:
-    pickle.dump(splits_idx, f)
+    for n_new in grid_new:
+        D_sub = subsample_dataset_stratified(
+            dataD_pool,
+            labelD_pool,
+            metaD_pool,
+            n_samples=n_new,
+            ood=False
+        )
 
-print(f"Saved to: {experiment_dir / 'splits_idx.pkl'}")
-print("Done.")
+        MSUMG_sub = subsample_dataset_stratified(
+            data_msumg_pool,
+            label_msumg_pool,
+            meta_msumg_pool,
+            n_samples=n_new,
+            ood=False
+        )
+
+        ############################
+        # SAVE SPLITS
+        ############################
+        splits_idx = {
+            "DRIAMS_A": {"finetuning": A_split["finetuning"]["idx"]},
+            "DRIAMS_B": {"finetuning": B_split["finetuning"]["idx"]},
+            "DRIAMS_C": {"finetuning": C_split["finetuning"]["idx"]},
+            "MARISMA":  {"finetuning": M_split["finetuning"]["idx"]},
+            "RKI":      {"finetuning": R_split["finetuning"]["idx"]},
+            "DRIAMS_D": {
+                "finetuning": D_sub["finetuning"]["idx"],
+                "test": D_eval_idx,
+            },
+            "MS-UMG": {
+                "finetuning": MSUMG_sub["finetuning"]["idx"],
+                "test": MSUMG_eval_idx,
+            },
+        }
+
+        file_name = f"prev_{n_prev}_new_{n_new}.pkl"
+        with open(experiment_dir / file_name, "wb") as f:
+            pickle.dump(splits_idx, f)
+
+        print(f"Saved to: {experiment_dir / file_name}")
+
+print("\n===== DONE =====")
