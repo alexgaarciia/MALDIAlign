@@ -172,6 +172,10 @@ for n_prev in grid_prev:
             ood=False
         )
 
+        # Map back to original indices
+        D_ft_idx_real = D_pool_idx[D_sub["finetuning"]["idx"]]
+        MSUMG_ft_idx_real = MSUMG_pool_idx[MSUMG_sub["finetuning"]["idx"]]
+
         ############################
         # SAVE SPLITS
         ############################
@@ -182,11 +186,11 @@ for n_prev in grid_prev:
             "MARISMA":  {"finetuning": M_split["finetuning"]["idx"]},
             "RKI":      {"finetuning": R_split["finetuning"]["idx"]},
             "DRIAMS_D": {
-                "finetuning": D_sub["finetuning"]["idx"],
+                "finetuning": D_ft_idx_real,
                 "test": D_eval_idx,
             },
             "MS-UMG": {
-                "finetuning": MSUMG_sub["finetuning"]["idx"],
+                "finetuning": MSUMG_ft_idx_real,
                 "test": MSUMG_eval_idx,
             },
         }
