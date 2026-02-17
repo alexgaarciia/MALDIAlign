@@ -1,5 +1,7 @@
 __pycache__/
 .vscode
 DRIAMS_study.pkl
+MARISMa_study.pkl
 experiments/run_classification.py
 experiments/eval_transfer.py
+logs/
