@@ -101,10 +101,10 @@ baseline_rf_original = joblib.load(PATH_RF_ORIGINAL)
 baseline_rf_latent   = joblib.load(PATH_RF_LATENT)
 
 vae_pretrained = MultiVAE_Bernoulli_SpeciesPrior_Extended(
-    input_dim=dataD.shape[1],
+    input_dim=data_msumg.shape[1],
     latent_dim=64,
     num_domains=5,
-    n_species=len(np.unique(labelD))
+    n_species=len(np.unique(label_msumg))
 )
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -127,7 +127,7 @@ results = []
 
 
 ############################################################
-# GRID EVALUATION LOOP (DRIAMS-D ONLY)
+# GRID EVALUATION LOOP (MS-UMG ONLY)
 ############################################################
 for n_prev in grid_prev:
     for n_new in grid_new:
@@ -139,13 +139,14 @@ for n_prev in grid_prev:
         # --------------------------------------------------
         split_file = SPLITS_PATH / f"prev_{n_prev}_new_{n_new}.pkl"
         splits = load_pkl(split_file)
-        idx_test, idx_ft = splits["DRIAMS_D"]["test"], splits["DRIAMS_D"]["finetuning"]
+        idx_test, idx_ft = splits["MS-UMG"]["test"], splits["MS-UMG"]["finetuning"]
 
         # --------------------------------------------------
         # Build TEST and FINETUNING set (fixed evaluation set)
         # --------------------------------------------------
-        X_test, y_test = dataD[idx_test], labelD[idx_test]
-        X_ft, y_ft = dataD[idx_ft], labelD[idx_ft]
+        X_test, y_test = data_msumg[idx_test], label_msumg[idx_test]
+        X_ft, y_ft     = data_msumg[idx_ft], label_msumg[idx_ft]
+
 
         # ==================================================
         # A. BASELINE RF (ORIGINAL SPACE)
@@ -153,8 +154,8 @@ for n_prev in grid_prev:
         metrics_orig = metrics_report(
             X_test, y_test,
             baseline_rf_original,
-            "DRIAMS_D",
-            np.unique(labelD)
+            "MS-UMG",
+            np.unique(label_msumg)
         )
 
         # ==================================================
@@ -164,8 +165,8 @@ for n_prev in grid_prev:
         metrics_lat = metrics_report(
             Z_test_zero, y_test,
             baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(labelD)
+            "MS-UMG",
+            np.unique(label_msumg)
         )
 
         # ==================================================
@@ -184,8 +185,8 @@ for n_prev in grid_prev:
         metrics_few = metrics_report(
             X_test, y_test,
             rf_few,
-            "DRIAMS_D",
-            np.unique(labelD)
+            "MS-UMG",
+            np.unique(label_msumg)
         )
 
         # ==================================================
@@ -193,7 +194,7 @@ for n_prev in grid_prev:
         # ==================================================
         vae_full, species_encoder_full, DOMAIN_MAP_full = run_finetuning(
             splits_path=split_file,
-            target_domain="DRIAMS_D",
+            target_domain="MS-UMG",
             pretrained_model_path=PRETRAINED_MODEL_PATH,
             finetuning_mode="full",
             n_prev=n_prev,
@@ -211,8 +212,8 @@ for n_prev in grid_prev:
             Z_test_full,
             y_test,
             baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(labelD)
+            "MS-UMG",
+            np.unique(label_msumg)
         )
 
         # ==================================================
@@ -220,7 +221,7 @@ for n_prev in grid_prev:
         # ==================================================
         vae_freeze, species_encoder_freeze, DOMAIN_MAP_freeze = run_finetuning(
             splits_path=split_file,
-            target_domain="DRIAMS_D",
+            target_domain="MS-UMG",
             pretrained_model_path=PRETRAINED_MODEL_PATH,
             finetuning_mode="freeze_priors",
             n_prev=n_prev,
@@ -238,8 +239,8 @@ for n_prev in grid_prev:
             Z_test_freeze,
             y_test,
             baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(labelD)
+            "MS-UMG",
+            np.unique(label_msumg)
         )
 
         # --------------------------------------------------

@@ -16,7 +16,7 @@ from utils.eval import eval_model, run_tsne_evaluation
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 
 
-def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning_mode, n_prev, n_new, output_dir, device):
+def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning_mode, n_prev, n_new, output_dir, device, consider_prev_domains=True):
     """
     Executes finetuning of a pretrained MultiVAE model
     for a specific target domain using precomputed splits.
@@ -153,13 +153,28 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     ####################
     print("Building finetuning dataset...")
 
-    X_ft = np.vstack([dataA_ft,dataB_ft,dataC_ft,dataM_ft,dataR_ft,data_target])
-    y_ft = np.concatenate([labelA_ft,labelB_ft,labelC_ft,labelM_ft,labelR_ft,label_target])
-    meta_ft = pd.concat([metaA_ft,metaB_ft,metaC_ft,metaM_ft,metaR_ft,meta_target],ignore_index=True)
+    if consider_prev_domains:
+        print("Using previous domains for finetuning...")
+
+        X_ft = np.vstack([dataA_ft,dataB_ft,dataC_ft,dataM_ft,dataR_ft,data_target])
+        y_ft = np.concatenate([labelA_ft,labelB_ft,labelC_ft,labelM_ft,labelR_ft,label_target])
+        meta_ft = pd.concat([metaA_ft,metaB_ft,metaC_ft,metaM_ft,metaR_ft,meta_target],ignore_index=True)
+    else:
+        print("Running target-only finetuning (no previous domains)")
+        X_ft = data_target
+        y_ft = label_target
+        meta_ft = meta_target.copy()
 
     domain_ft = meta_ft["hospital"].map(DOMAIN_MAP).values.astype(np.int64)
+
+
+    y_base = np.concatenate([labelA, labelB, labelC, label_marisma, label_rki])
+    n_species_base = len(np.unique(y_base))
+
     species_encoder = LabelEncoder()
-    species_ft = species_encoder.fit_transform(y_ft).astype(np.int64)
+    species_encoder.fit(y_base)
+
+    species_ft = species_encoder.transform(y_ft)
 
 
     ####################
@@ -171,7 +186,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
         input_dim=X_ft.shape[1],
         latent_dim=64,
         num_domains=5,
-        n_species = len(np.unique(y_ft)))
+        n_species = n_species_base)
 
     vae.load_state_dict(torch.load(pretrained_model_path, map_location=device))
     vae.to(device)
@@ -205,12 +220,18 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     ####################
     print("Preparing training split...")
 
+    # Robust stratify for tiny few-shot
+    counts = np.bincount(species_ft)
+    can_stratify = (len(np.unique(species_ft)) > 1) and (counts.min() >= 2)
+
+    stratify_vec = species_ft if can_stratify else None
+    if not can_stratify:
+        print("[WARN] Too few samples per class to stratify train/val. Using random split.")
+
     X_tr, X_val, d_tr, d_val, s_tr, s_val = train_test_split(
-        X_ft,
-        domain_ft,
-        species_ft,
+        X_ft, domain_ft, species_ft,
         test_size=0.2,
-        stratify=species_ft,
+        stratify=stratify_vec,
         random_state=42
     )
 
@@ -296,7 +317,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     meta_eval["year"] = meta_eval["year"].fillna("unknown").astype(str)
 
     domain_eval = meta_eval["hospital"].map(DOMAIN_MAP).values.astype(np.int64)
-    species_eval = species_encoder.transform(y_eval).astype(np.int64)
+    species_eval = species_encoder.transform(y_eval)
 
     eval_loader = DataLoader(
         TensorDataset(
@@ -328,3 +349,5 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
 
     print("Latent evaluation finished.")
     print("\n===== EXPERIMENT COMPLETE =====")
+
+    return vae, species_encoder, DOMAIN_MAP

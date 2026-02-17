@@ -127,3 +127,51 @@ def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix):
     plot_tsne_species(df_all, tsne_results, overlay_per_hospital=False, save=True, path=output_dir / f"{prefix}_tsne_species.png")
     plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path=output_dir / f"{prefix}_tsne_species_overlay.png")
     plot_tsne_species(df_all, tsne_results, overlay_per_year_per_species=True, save=True, path=output_dir / f"{prefix}_tsne_species_overlay_year.png")
+
+
+def encode_latent(model, X, device, batch_size=256):
+    """
+    Encode input data into latent space using a trained VAE model.
+
+    This function passes the input data through the model's encoder
+    and extracts the posterior mean (μ) of the latent distribution
+    for each sample. It assumes a VAE-style encoder returning (mu, logvar).
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        Trained model containing an `encoder` method that returns
+        (mu, logvar).
+    X : np.ndarray
+        Input data of shape (N, input_dim), where N is the number
+        of samples.
+    device : torch.device
+        Device on which computation will be performed (CPU or CUDA).
+    batch_size : int, optional (default=256)
+        Batch size used during encoding to avoid memory overflow.
+
+    Returns
+    -------
+    Z : np.ndarray
+        Latent representations of shape (N, latent_dim),
+        corresponding to the posterior mean μ for each sample.
+    """
+
+    model.eval()
+    Z = []
+
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+
+    loader = torch.utils.data.DataLoader(
+        X_tensor,
+        batch_size=batch_size,
+        shuffle=False
+    )
+
+    with torch.no_grad():
+        for x in loader:
+            x = x.to(device)
+            mu, _ = model.encoder(x)
+            Z.append(mu.cpu().numpy())
+
+    return np.vstack(Z)
