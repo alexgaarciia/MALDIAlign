@@ -6,5 +6,6 @@ experiments/run_classification.py
 experiments/eval_transfer.py
 logs/
 run_maldi_grid.sh
+run_maldi_grid_msumg.sh
 run_maldi_grid.sh.save
 conda_env/

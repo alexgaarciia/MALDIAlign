@@ -147,7 +147,6 @@ for n_prev in grid_prev:
         X_test, y_test = data_msumg[idx_test], label_msumg[idx_test]
         X_ft, y_ft     = data_msumg[idx_ft], label_msumg[idx_ft]
 
-
         # ==================================================
         # A. BASELINE RF (ORIGINAL SPACE)
         # ==================================================
