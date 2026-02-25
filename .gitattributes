@@ -16,3 +16,4 @@ experiments/finetuning/results/finetuning_vae_multidecoder_prior_ABC_MAR_RKI/202
 experiments/amr/pickles/E-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/K-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/S-OXA.pkl filter=lfs diff=lfs merge=lfs -text
+experiments/finetuning/results/**/*.pth filter=lfs diff=lfs merge=lfs -text
