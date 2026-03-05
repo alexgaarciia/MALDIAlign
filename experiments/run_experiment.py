@@ -60,7 +60,7 @@ def parse_args():
 import torch
 from src.config.loader import load_config
 from src.experiments.experiment import init_experiment
-from src.data.data import prepare_data
+from src.training.data_pipeline import prepare_data
 from models.build_model import build_model
 from src.training.training import train_model
 from src.visualization.viz import plot_model_metrics

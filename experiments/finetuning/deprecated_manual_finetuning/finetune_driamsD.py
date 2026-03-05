@@ -39,7 +39,8 @@ import numpy as np
 import pandas as pd
 
 from src.config.loader import load_config
-from src.data.data import load_driams, load_marisma, load_rki, row_minmax_normalize
+from src.data.datasets import load_driams, load_marisma, load_rki
+from src.data.preprocessing import row_minmax_normalize
 from src.evaluation.eval import eval_model, run_tsne_evaluation
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from sklearn.model_selection import train_test_split

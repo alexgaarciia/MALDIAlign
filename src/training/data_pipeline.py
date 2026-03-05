@@ -1,10 +1,13 @@
 import numpy as np
 import pandas as pd
 
-from src.config.loader import load_config
-from src.data.io import load_pkl
-from src.data.datasets import load_driams, load_marisma, load_msumg, load_rki
+from sklearn.model_selection import train_test_split
 
+import torch
+from src.config.loader import load_config
+from src.data.datasets import load_driams, load_marisma, load_msumg, load_rki
+from src.data.io import load_pkl
+from src.data.preprocessing import map_domains, row_minmax_normalize
 
 
 def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
@@ -46,6 +49,8 @@ def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0
         - species_weights : torch.Tensor or None
     """
 
+    cfg = load_config()
+
     dataset_pkl = pkl_path
     print("dataset_pkl:", dataset_pkl)
     print("domains:", domains)
@@ -83,7 +88,6 @@ def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0
         if amr is not None:
             amr_list.append(amr)
     else:
-        cfg = load_config()
         for d in domains:
             if d.startswith("DRIAMS_"):
                 driams_pkl = cfg["data"]["DRIAMS_REDUCED_PKL"]
@@ -124,8 +128,7 @@ def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0
 
     # Normalize data
     if normalization == "row_minmax":
-        data_norm = (data_final - data_final.min(axis=1, keepdims=True)) / (
-            data_final.max(axis=1, keepdims=True) - data_final.min(axis=1, keepdims=True) + 1e-8)
+        data_norm = row_minmax_normalize(data_final)
     else:
         data_norm = data_final
 
@@ -184,11 +187,19 @@ def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0
         amr_val_tensor   = torch.tensor(amr_val, dtype=torch.float32)
         amr_all_tensor   = torch.tensor(amr_final, dtype=torch.float32)
 
-    else:
+        # -----------------------------
+        # Compute pos_weight for BCE
+        # -----------------------------
+        n_pos = (amr_train_tensor == 1).sum().item()
+        n_neg = (amr_train_tensor == 0).sum().item()
 
+        pos_weight = torch.tensor([n_neg / (n_pos + 1e-8)], dtype=torch.float32)
+
+    else:
         amr_train_tensor = None
         amr_val_tensor = None
         amr_all_tensor = None
+        pos_weight = None
 
     train_loader, val_loader, all_loader = construct_dataloaders(
         X_train_tensor, X_val_tensor, X_all_tensor,
@@ -217,5 +228,6 @@ def prepare_data(domains, pkl_path=None, normalization="row_minmax", test_size=0
         "val_loader": val_loader,
         "all_loader": all_loader,
         "input_dim": data_final.shape[1],
-        "species_weights": species_weights
+        "species_weights": species_weights,
+        "pos_weight": pos_weight
     }

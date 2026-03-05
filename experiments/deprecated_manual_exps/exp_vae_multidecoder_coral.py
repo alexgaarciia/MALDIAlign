@@ -14,7 +14,9 @@ sys.path.append(project_root)
 import torch
 from models.deep.MultiVAECoral import MultiVAE_CORAL
 from src.config.loader import load_config
-from src.data.data import load_driams, map_domains, construct_dataloaders
+from src.data.datasets import load_driams
+from src.data.preprocessing import map_domains
+from src.dataloaders.builders import construct_dataloaders
 from src.visualization.viz import *
 from src.evaluation.eval import eval_model
 from sklearn.model_selection import train_test_split

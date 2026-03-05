@@ -25,7 +25,7 @@ if target is not None and target != cwd:
 import pickle
 import numpy as np
 import pandas as pd
-from src.data.data import load_pkl
+from src.data.io import load_pkl
 
 
 ############################################################

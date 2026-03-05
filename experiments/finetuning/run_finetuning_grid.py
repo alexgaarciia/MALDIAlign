@@ -5,7 +5,6 @@ from pathlib import Path
 import os
 import sys
 import json
-import pickle
 import joblib
 from datetime import datetime
 
@@ -31,15 +30,14 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from src.data.data import (
-    load_pkl,
-    load_config,
+from src.config.loader import load_config
+from src.data.io import load_pkl
+from src.data.datasets import (
     load_driams,
     load_marisma,
     load_msumg,
-    load_rki,
-    row_minmax_normalize
-)
+    load_rki)
+from src.data.preprocessing import row_minmax_normalize
 from src.evaluation.metrics import metrics_report
 from experiments.finetuning.run_finetuning import run_finetuning
 from src.evaluation.eval import encode_latent

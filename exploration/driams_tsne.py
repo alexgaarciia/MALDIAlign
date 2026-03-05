@@ -33,7 +33,7 @@ from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
 from src.config.loader import load_config
-from src.data.data import load_pkl
+from src.data.io import load_pkl
 from src.visualization.viz import compute_tsne_df, plot_tsne_global, compute_tsne_per_species, plot_tsne_species
 
 

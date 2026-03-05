@@ -24,7 +24,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from src.config.loader import load_config
-from src.data.data import load_pkl
+from src.data.io import load_pkl
 from src.models.utils.style_transfer import style_transfer
 
 

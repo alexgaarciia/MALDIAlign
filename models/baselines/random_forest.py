@@ -37,7 +37,7 @@ import pandas as pd
 
 from datetime import datetime
 from src.config.loader import load_config
-from src.data.data import load_pkl
+from src.data.io import load_pkl
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.ensemble import RandomForestClassifier

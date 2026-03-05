@@ -45,13 +45,12 @@ print("Saving splits to:", experiment_dir)
 # IMPORTS
 ############################
 from src.config.loader import load_config
-from src.data.data import (
+from src.data.datasets import (
     load_driams,
     load_marisma,
     load_msumg,
-    load_rki,
-    subsample_dataset_stratified,
-)
+    load_rki)
+from src.data.splits import subsample_dataset_stratified
 
 
 ############################
