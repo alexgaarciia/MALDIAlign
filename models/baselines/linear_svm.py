@@ -36,8 +36,8 @@ import numpy as np
 import pandas as pd
 
 from datetime import datetime
-from utils.config import load_config
-from utils.data import load_pkl
+from src.config.loader import load_config
+from src.data.data import load_pkl
 
 from sklearn.model_selection import GridSearchCV, StratifiedKFold, train_test_split
 from sklearn.preprocessing import StandardScaler

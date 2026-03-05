@@ -10,9 +10,9 @@ from torch.utils.data import DataLoader, TensorDataset
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
-from utils.config import load_config
-from utils.data import load_driams, load_marisma, load_rki, load_msumg, row_minmax_normalize
-from utils.eval import eval_model, run_tsne_evaluation
+from src.config.loader import load_config
+from src.data.data import load_driams, load_marisma, load_rki, load_msumg, row_minmax_normalize
+from src.evaluation.eval import eval_model, run_tsne_evaluation
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 
 

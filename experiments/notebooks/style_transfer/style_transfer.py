@@ -23,9 +23,9 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from utils.config import load_config
-from utils.data import load_pkl
-from utils.style_transfer import style_transfer
+from src.config.loader import load_config
+from src.data.data import load_pkl
+from src.models.utils.style_transfer import style_transfer
 
 
 ## Data loading

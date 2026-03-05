@@ -44,8 +44,8 @@ print("Saving splits to:", experiment_dir)
 ############################
 # IMPORTS
 ############################
-from utils.config import load_config
-from utils.data import (
+from src.config.loader import load_config
+from src.data.data import (
     load_driams,
     load_marisma,
     load_msumg,

@@ -31,7 +31,7 @@ import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
 
-from utils.data import (
+from src.data.data import (
     load_pkl,
     load_config,
     load_driams,
@@ -40,9 +40,9 @@ from utils.data import (
     load_rki,
     row_minmax_normalize
 )
-from utils.metrics import metrics_report
+from src.evaluation.metrics import metrics_report
 from experiments.finetuning.run_finetuning import run_finetuning
-from utils.eval import encode_latent
+from src.evaluation.eval import encode_latent
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 
 

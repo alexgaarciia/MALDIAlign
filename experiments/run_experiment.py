@@ -58,13 +58,13 @@ def parse_args():
 # Imports
 #################################
 import torch
-from utils.config import load_config
-from utils.experiment import init_experiment
-from utils.data import prepare_data
+from src.config.loader import load_config
+from src.experiments.experiment import init_experiment
+from src.data.data import prepare_data
 from models.build_model import build_model
-from utils.training import train_model
-from utils.viz import plot_model_metrics
-from utils.eval import eval_model, run_tsne_evaluation
+from src.training.training import train_model
+from src.visualization.viz import plot_model_metrics
+from src.evaluation.eval import eval_model, run_tsne_evaluation
 
 
 #################################
@@ -85,8 +85,8 @@ def main():
     # Load data
     print("\n===== Loading and preparing data =====")
     data_cfg = cfg["data"]
-    data = prepare_data(domains=data_cfg["domains"], normalization=data_cfg.get("normalization", "row_minmax"), test_size=data_cfg.get("test_size", 0.2), batch_size=data_cfg.get("batch_size", 64), use_species_weight=data_cfg.get("use_species_weights", False))
-    data_final, label_final, meta_final, train_loader, val_loader, all_loader, in_dim, species_weights = data["data_final"], data["label_final"], data["meta_final"], data["train_loader"], data["val_loader"], data["all_loader"], data["input_dim"], data["species_weights"]
+    data = prepare_data(domains=data_cfg["domains"], pkl_path=data_cfg.get("pkl_path"), normalization=data_cfg.get("normalization", "row_minmax"), test_size=data_cfg.get("test_size", 0.2), batch_size=data_cfg.get("batch_size", 64), use_species_weight=data_cfg.get("use_species_weights", False))
+    data_final, label_final, meta_final, train_loader, val_loader, all_loader, in_dim, species_weights, pos_weight = data["data_final"], data["label_final"], data["meta_final"], data["train_loader"], data["val_loader"], data["all_loader"], data["input_dim"], data["species_weights"], data["pos_weight"]
 
     # Build model
     print("\n===== Instantiating model =====")
@@ -95,7 +95,7 @@ def main():
     # Train
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"\n===== Training model on {device} =====")
-    trained_model = train_model(model, train_loader, val_loader, device, species_weights=species_weights)
+    trained_model = train_model(model, train_loader, val_loader, device, species_weights=species_weights, pos_weight=pos_weight)
     print("\n===== Finished training =====")
     torch.save(trained_model.state_dict(), experiment_dir / "model.pth")
     print("Model saved to:", experiment_dir / "model.pth")
