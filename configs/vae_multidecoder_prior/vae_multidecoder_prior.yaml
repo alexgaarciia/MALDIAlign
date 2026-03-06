@@ -26,3 +26,6 @@ training:
 evaluation:
   use_domain: false
   compute_tsne: true
+
+  prior_sampling: true
+  prior_samples_per_species: 50
