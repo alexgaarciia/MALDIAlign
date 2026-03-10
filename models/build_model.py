@@ -8,6 +8,7 @@ from models.deep.cVAESpecies import SpeciesCVAE_Bernoulli_Extended
 from models.deep.cVAEPrior import ConditionalVAE_Bernoulli_SpeciesPrior_Extended
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.deep.DANN import DANNFull_Extended
+from models.deep.MultiVAEPriorAMR import MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended
 
 
 def build_model(cfg: dict, input_dim: int):
@@ -140,6 +141,18 @@ def build_model(cfg: dict, input_dim: int):
             epochs=training_cfg["epochs"],
             lr=float(training_cfg["lr"]),
             lambda_domain=float(model_cfg.get("lambda_domain", 0.01)),
+            patience=training_cfg["patience"],
+        )
+
+    elif model_type == "vae_multidecoder_prior_amr":
+        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            n_species=model_cfg["n_species"],
+            lambda_amr=training_cfg["lambda_amr"],
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"],
         )
 
