@@ -1,7 +1,7 @@
-from pathlib import Path
 import json
 import numpy as np
 import matplotlib.pyplot as plt
+from pathlib import Path
 from sklearn.metrics import balanced_accuracy_score, f1_score, recall_score, confusion_matrix, ConfusionMatrixDisplay
 
 
@@ -28,6 +28,7 @@ def metrics_report(X, y, model, domain_name, class_names=None):
         "Specificity_Macro": spec_macro,
         "Confusion Matrix": cm
     }
+
 
 def print_metrics(metrics, logs=False, save=False, path=None):
     domain, class_names, b_acc, f1, recall, spec, cm = metrics["Domain"], metrics["Labels"], metrics["Balanced_Accuracy"], metrics["F1_Macro"], metrics["Recall_Macro"], metrics["Specificity_Macro"], metrics["Confusion Matrix"]

@@ -7,8 +7,9 @@ def train_model(model, train_loader, val_loader, device, species_weights=None, p
     Automatically checks whether the model's trainloop supports `species_weights`.
     """
 
-    # Store pos_weight in the model so the loss can access it
-    model.pos_weight = pos_weight
+    # Attach pos_weight if model needs it
+    if pos_weight is not None:
+        model.pos_weight = pos_weight
 
     sig = inspect.signature(model.trainloop)
 
