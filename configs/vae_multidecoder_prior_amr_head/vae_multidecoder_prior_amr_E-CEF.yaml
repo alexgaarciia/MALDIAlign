@@ -1,5 +1,5 @@
 experiment:
-  name: vae_multidecoder_prior_amr_latent
+  name: vae_multidecoder_prior_amr
   seed: 42
   output_dir: experiments/results
 
@@ -12,7 +12,7 @@ data:
   use_species_weights: False
 
 model:
-  type: vae_multidecoder_prior_amr
+  type: vae_multidecoder_prior_amr_head
   latent_dim: 64
   num_domains: 4
   n_species: 1
@@ -20,6 +20,7 @@ model:
 training:
   epochs: 100
   lr: 1e-4
+  lambda_amr: 5
   annealing_epochs: 50
   patience: 10
   metrics_plot_title: "VAE Multidecoder w/prior for species + AMR"
