@@ -17,3 +17,4 @@ experiments/amr/pickles/E-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/K-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/S-OXA.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/finetuning/results/**/*.pth filter=lfs diff=lfs merge=lfs -text
+experiments/results/vae_multidecoder_weighted/20260324_170524/model.pth filter=lfs diff=lfs merge=lfs -text
