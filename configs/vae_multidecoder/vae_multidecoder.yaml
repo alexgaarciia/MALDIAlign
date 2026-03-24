@@ -16,34 +16,12 @@ model:
   num_domains: 2
 
 training:
-  epochs: 200
+  epochs: 100
   lr: 1e-4
   annealing_epochs: 100
-  patience: 40
+  patience: 20
   metrics_plot_title: "VAE Multidecoder"
 
 evaluation:
   use_domain: false
   compute_tsne: true
-
-# classification:
-#   original: 
-#     train_domain: DRIAMS_A
-#     test_domains: [DRIAMS_B, DRIAMS_C, DRIAMS_D]
-#     val_size: 0.2
-#     random_forest:
-#       n_estimators: 200
-#       max_depth: 20
-#       class_weight: "balanced_subsample"
-#       n_jobs: -1 
-#       random_state: 42
-#   latent:
-#     train_domain: DRIAMS_A
-#     test_domains: [DRIAMS_D]
-#     val_size: 0.2
-#     random_forest:
-#       n_estimators: 800
-#       max_depth: 20
-#       class_weight: "balanced_subsample"
-#       n_jobs: -1 
-#       random_state: 42
