@@ -2,6 +2,7 @@
 # PATH CONFIGURATION
 ############################################################
 import sys
+import pickle
 from datetime import datetime
 from pathlib import Path
 
@@ -10,7 +11,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 # Create experiment directory 
 output_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/amr/results")
-space = "latent"
+space = "original"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 experiment_dir = output_dir / space / timestamp
@@ -30,14 +31,13 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from sklearn.model_selection import train_test_split, GridSearchCV
 from lightgbm import LGBMClassifier
-from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score, recall_score, confusion_matrix
+from sklearn.model_selection import GridSearchCV
+from sklearn.metrics import roc_auc_score, balanced_accuracy_score, recall_score, confusion_matrix
 
 from src.training.data_pipeline import load_pkl
 from src.evaluation.eval import encode_latent
-from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
-from models.deep.MultiVAEPriorAMR import MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended
+from models.deep.MultiVAEPriorAMRHead import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_Extended
 
 
 
@@ -60,99 +60,92 @@ print("Datasets loaded successfully.")
 
 
 ############################################################
-# LOAD PRETRAINED BASELINE MODEL
+# LOAD SPLITS
 ############################################################
-print("\n===== LOADING PRETRAINED MODEL =====")
+print("\n===== LOADING SPLITS =====")
 
-PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr/20260308_202522/model.pth")
+SPLITS_ECEF = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr/20260325_221257/data_splits.pkl")
+SPLITS_KCEF = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr/20260325_224119/data_splits.pkl")
+SPLITS_SOXA = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr/20260325_224502/data_splits.pkl")
 
-vae_pretrained = MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended(
-    input_dim=ecef_data.shape[1],
-    latent_dim=64,
-    num_domains=4, # important to change when S-OXA
-    n_species=1)
-
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-vae_pretrained.load_state_dict(torch.load(PRETRAINED_MODEL_PATH, map_location=device))
-vae_pretrained.to(device)
-vae_pretrained.eval()
-
-print("\n===== MULTIDECODER LOADED SUCCESSFULLY =====")
+print("\n===== SPLITS LOADED SUCCESSFULLY =====")
 
 
 ############################################################
 # DEFINE SCENARIOS
 ############################################################
 scenarios = {
-    "E-CEF": {"data": ecef_data, "label": ecef_label, "meta": ecef_meta, "amr": ecef_amr},
-    #"K-CEF": {"data": kcef_data, "label": kcef_label, "meta": kcef_meta, "amr": kcef_amr},
-    #"S-OXA": {"data": soxa_data, "label": soxa_label, "meta": soxa_meta, "amr": soxa_amr},
+    "E-CEF": {"data": ecef_data, "label": ecef_label, "meta": ecef_meta, "amr": ecef_amr, "splits_path": SPLITS_ECEF},
+    "K-CEF": {"data": kcef_data, "label": kcef_label, "meta": kcef_meta, "amr": kcef_amr, "splits_path": SPLITS_KCEF},
+    "S-OXA": {"data": soxa_data, "label": soxa_label, "meta": soxa_meta, "amr": soxa_amr, "splits_path": SPLITS_SOXA}
 }
 
-# Container for global results
 results = []
+
+param_grid = {
+    "n_estimators": np.arange(300, 901, 200),   
+    "num_leaves": np.arange(31, 98, 22),        
+    "max_depth": np.arange(6, 15, 3),           
+}
 
 
 ############################################################
 # RUN EXPERIMENTS
 ############################################################
-for scenario_name, scenario_dict in scenarios.items():
+for scenario_name, s_dict in scenarios.items():
     print("\n" + "="*60)
     print(f"===== SCENARIO: {scenario_name} =====")
     print("="*60)
 
-    data = scenario_dict["data"]
-    label = scenario_dict["label"]
-    meta = scenario_dict["meta"]
-    amr  = scenario_dict["amr"]
+    X_all = s_dict["data"]
+    amr = s_dict["amr"]
+    meta = s_dict["meta"]
 
     centers = sorted(meta["hospital"].unique())
     print(f"Centers available: {centers}")
 
+    with open(s_dict["splits_path"], "rb") as f:
+            saved_splits = pickle.load(f)
+        
+    domain_splits = saved_splits.get("splits_per_domain", {})
+
+    # Split data per hospital
     center_data = {}
 
-    # ------------------------------------------------------
-    # Split data per hospital
-    # ------------------------------------------------------
-    print("\nSplitting data per hospital")
-
     for center in centers:
-        mask = meta["hospital"] == center
-        
-        X_raw = data[mask]
-        y = amr[mask]
+        indices = domain_splits[center]
+        train_idx = indices['train_idx']
+        test_idx = indices['test_idx']
 
-        # There is *one* sample in S-OXA with an emtpy value
-        valid_mask = ~np.isnan(y)
-        X_raw = X_raw[valid_mask]
-        y = y[valid_mask]
+        y_train_raw = amr[train_idx]
+        y_test_raw = amr[test_idx]
 
-        # encode una sola vez
-        Z = encode_latent(vae_pretrained, X_raw, device)
+        X_train_raw = X_all[train_idx]
+        X_test_raw = X_all[test_idx]
 
-        Z_train, Z_test, y_train, y_test = train_test_split(
-            Z, y, stratify=y, test_size=0.2, random_state=42
-        )
+        m_tr = ~np.isnan(y_train_raw)
+        m_te = ~np.isnan(y_test_raw)
+
+        X_train_clean, y_train_clean = X_train_raw[m_tr], y_train_raw[m_tr]
+        X_test_clean, y_test_clean = X_test_raw[m_te], y_test_raw[m_te]
+
+        if len(np.unique(y_train_clean)) < 2:
+            print(f"Skipping {center}")
+            continue
 
         center_data[center] = {
-            "train_data": Z_train,
-            "train_labels": y_train,
-            "test_data": Z_test,
-            "test_labels": y_test,
+            "train_data": X_train_clean,
+            "train_labels": y_train_clean,
+            "test_data": X_test_clean,
+            "test_labels": y_test_clean,
         }
 
-    # ------------------------------------------------------
-    # Hyperparameter grid
-    # ------------------------------------------------------
-    param_grid = {
-        "n_estimators": np.arange(300, 901, 200),   
-        "num_leaves": np.arange(31, 98, 22),        
-        "max_depth": np.arange(6, 15, 3),           
-    }
+        tr_0, tr_1 = (y_train_clean == 0).sum(), (y_train_clean == 1).sum()
+        print(f"{center.ljust(10)} | Train N: {len(y_train_clean)} (0:{tr_0}, 1:{tr_1})")
 
-    # ------------------------------------------------------
     # Cross-site evaluation
-    # ------------------------------------------------------
+    valid_train_centers = sorted(center_data.keys())
+
     for train_center in centers:
         print("\n" + "-"*50)
         print(f"Training on {train_center}")
@@ -162,44 +155,36 @@ for scenario_name, scenario_dict in scenarios.items():
         y_train = center_data[train_center]["train_labels"]
 
         base_clf = LGBMClassifier(objective="binary", random_state=42, verbosity=-1, n_jobs=1)
-
         grid_clf = GridSearchCV(base_clf, param_grid=param_grid, cv=5, scoring="roc_auc", n_jobs=8)
-        grid_clf.fit(X_train, y_train)
-    
-        print(f"Best CV ROC-AUC: {grid_clf.best_score_:.3f}")
-        print(f"Best params: {grid_clf.best_params_}")
 
+        grid_clf.fit(X_train, y_train)
         best_model = grid_clf.best_estimator_
 
-        # ---------------------------------------------
         # Evaluate on centers
-        # ---------------------------------------------
-        for test_center in centers:
+        for test_center in valid_train_centers:
             X_test = center_data[test_center]["test_data"]
             y_test = center_data[test_center]["test_labels"]
+
+            if len(X_test) == 0 or len(np.unique(y_test)) < 2:
+                continue
 
             y_pred = best_model.predict(X_test)
             y_prob = best_model.predict_proba(X_test)[:, 1]
 
             auc = roc_auc_score(y_test, y_prob)
-            pr = average_precision_score(y_test, y_prob)
-    
             ba  = balanced_accuracy_score(y_test, y_pred)
             sens = recall_score(y_test, y_pred)  
-
+            
             tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
-            spec = tn / (tn + fp)
+            spec = tn / (tn + fp) if (tn + fp) > 0 else 0.0
 
             eval_type = "INTRA-SITE" if test_center == train_center else "CROSS-SITE"
 
             print(
-                f"[{eval_type}] "
-                f"Train {train_center} → Test {test_center} | "
-                f"ROC-AUC: {auc:.3f} | "
-                f"PR-AUC: {pr:.3f} | "
-                f"BA: {ba:.3f} | "
-                f"Sens: {sens:.3f} | "
-                f"Spec: {spec:.3f}"
+                f"  [{eval_type}] "
+                f"Test {test_center} | "
+                f"AUC: {auc:.3f} | BA: {ba:.3f} | "
+                f"Sens: {sens:.3f} | Spec: {spec:.3f}"
             )
 
             results.append({
@@ -208,7 +193,6 @@ for scenario_name, scenario_dict in scenarios.items():
                 "test_center": test_center,
                 "evaluation": "intra_site" if test_center == train_center else "cross_site",
                 "roc_auc": auc,
-                "pr_auc": pr,
                 "balanced_acc": ba,
                 "sensitivity": sens,
                 "specificity": spec
@@ -226,37 +210,27 @@ print("===== GENERATING CROSS-SITE HEATMAPS =====")
 print("="*60)
 
 for scenario_name in df_results["scenario"].unique():
-
-    print(f"Creating plots for {scenario_name}")
+    print(f"Creating plot for {scenario_name}")
 
     df_s = df_results[df_results["scenario"] == scenario_name]
 
-    # Pivot tables
+    # Obtain original centers to keep grid constant (shows empty boxes if missing)
+    scenario_centers = sorted(scenarios[scenario_name]["meta"]["hospital"].unique())
+
+    # Pivot table
     roc_matrix = df_s.pivot(
         index="train_center",
         columns="test_center",
         values="roc_auc"
     )
 
-    pr_matrix = df_s.pivot(
-        index="train_center",
-        columns="test_center",
-        values="pr_auc"
-    )
-
-    # Order centers
-    centers_sorted = sorted(df_s["train_center"].unique())
+    # Reindex to force all hospitals to appear
     roc_matrix = roc_matrix.reindex(
-        index=centers_sorted,
-        columns=centers_sorted
+        index=scenario_centers,
+        columns=scenario_centers
     )
 
-    pr_matrix = pr_matrix.reindex(
-        index=centers_sorted,
-        columns=centers_sorted
-    )
-    
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+    fig, ax = plt.subplots(figsize=(8, 6))
 
     # ROC heatmap
     sns.heatmap(
@@ -264,36 +238,23 @@ for scenario_name in df_results["scenario"].unique():
         annot=True,
         fmt=".3f",
         cmap="viridis",
-        vmin=0.4,
+        vmin=0.0,
         vmax=1.0,
         linewidths=0.5,
         cbar_kws={"label": "ROC-AUC"},
-        ax=axes[0]
+        ax=ax
     )
-    axes[0].set_title(f"{scenario_name} - ROC-AUC")
-    axes[0].set_xlabel("Test Center")
-    axes[0].set_ylabel("Train Center")
-
-    # PR heatmap
-    sns.heatmap(
-        pr_matrix,
-        annot=True,
-        fmt=".3f",
-        cmap="viridis",
-        vmin=0.4,
-        vmax=1.0,
-        linewidths=0.5,
-        cbar_kws={"label": "PR-AUC"},
-        ax=axes[1]
-    )
-    axes[1].set_title(f"{scenario_name} - PR-AUC")
-    axes[1].set_xlabel("Test Center")
-    axes[1].set_ylabel("")
+    
+    # Set dark background for missing values (NaN)
+    ax.set_facecolor("#333333") 
+    ax.set_title(f"{scenario_name} - ROC-AUC\n(Gray cells = Insufficient data)")
+    ax.set_xlabel("Test Center")
+    ax.set_ylabel("Train Center")
 
     plt.tight_layout()
 
     # Save image
-    png_path = experiment_dir / f"{scenario_name}_heatmap.png"
+    png_path = experiment_dir / f"{scenario_name}_heatmap_roc.png"
     fig.savefig(png_path, dpi=300, bbox_inches="tight")
     plt.close(fig)
 

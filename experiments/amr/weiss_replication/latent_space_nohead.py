@@ -10,7 +10,7 @@ sys.path.append(str(PROJECT_ROOT))
 
 # Create experiment directory 
 output_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/amr/results")
-space = "original"
+space = "latent"
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 experiment_dir = output_dir / space / timestamp
@@ -23,17 +23,20 @@ print("-"*60)
 ############################################################
 # IMPORTS
 ############################################################
+import torch
 import numpy as np
 import pandas as pd
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from src.training.data_pipeline import load_pkl, row_minmax_normalize
-
 from sklearn.model_selection import train_test_split, GridSearchCV
 from lightgbm import LGBMClassifier
 from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score, recall_score, confusion_matrix
+
+from src.training.data_pipeline import load_pkl
+from src.evaluation.eval import encode_latent
+from models.deep.MultiVAEPriorAMR import MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended
 
 
 ############################################################
@@ -55,11 +58,34 @@ print("Datasets loaded successfully.")
 
 
 ############################################################
+# LOAD PRETRAINED BASELINE MODEL
+############################################################
+print("\n===== LOADING PRETRAINED MODEL =====")
+
+#PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr_latent/20260312_184916/model.pth")
+#PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr_latent/20260312_185519/model.pth")
+PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior_amr_latent/20260312_193641/model.pth")
+
+vae_pretrained = MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended(
+    input_dim=ecef_data.shape[1],
+    latent_dim=64,
+    num_domains=3, # important to change when S-OXA
+    n_species=1)
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+vae_pretrained.load_state_dict(torch.load(PRETRAINED_MODEL_PATH, map_location=device))
+vae_pretrained.to(device)
+vae_pretrained.eval()
+
+print("\n===== MULTIDECODER LOADED SUCCESSFULLY =====")
+
+
+############################################################
 # DEFINE SCENARIOS
 ############################################################
 scenarios = {
-    "E-CEF": {"data": ecef_data, "label": ecef_label, "meta": ecef_meta, "amr": ecef_amr},
-    "K-CEF": {"data": kcef_data, "label": kcef_label, "meta": kcef_meta, "amr": kcef_amr},
+    #"E-CEF": {"data": ecef_data, "label": ecef_label, "meta": ecef_meta, "amr": ecef_amr},
+    #"K-CEF": {"data": kcef_data, "label": kcef_label, "meta": kcef_meta, "amr": kcef_amr},
     "S-OXA": {"data": soxa_data, "label": soxa_label, "meta": soxa_meta, "amr": soxa_amr},
 }
 
@@ -93,24 +119,25 @@ for scenario_name, scenario_dict in scenarios.items():
     for center in centers:
         mask = meta["hospital"] == center
         
-        X = data[mask]
+        X_raw = data[mask]
         y = amr[mask]
 
         # There is *one* sample in S-OXA with an emtpy value
         valid_mask = ~np.isnan(y)
-        X = X[valid_mask]
+        X_raw = X_raw[valid_mask]
         y = y[valid_mask]
 
-        X = row_minmax_normalize(X)
-
-        X_train, X_test, y_train, y_test = train_test_split(
-            X, y, stratify=y, test_size=0.2, random_state=42
+        # encode una sola vez
+        Z = encode_latent(vae_pretrained, X_raw, device, amr=y)
+        
+        Z_train, Z_test, y_train, y_test = train_test_split(
+            Z, y, stratify=y, test_size=0.2, random_state=42
         )
 
         center_data[center] = {
-            "train_data": X_train,
+            "train_data": Z_train,
             "train_labels": y_train,
-            "test_data": X_test,
+            "test_data": Z_test,
             "test_labels": y_test,
         }
 
@@ -135,6 +162,7 @@ for scenario_name, scenario_dict in scenarios.items():
         y_train = center_data[train_center]["train_labels"]
 
         base_clf = LGBMClassifier(objective="binary", random_state=42, verbosity=-1, n_jobs=1)
+
         grid_clf = GridSearchCV(base_clf, param_grid=param_grid, cv=5, scoring="roc_auc", n_jobs=8)
         grid_clf.fit(X_train, y_train)
     
