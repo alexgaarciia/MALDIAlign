@@ -45,20 +45,8 @@ class MultiVAE_Bernoulli_SpeciesPrior(MultiVAE_Bernoulli):
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
 
-class MultiVAE_Bernoulli_SpeciesPrior_Extended(
-    MultiVAE_Bernoulli_SpeciesPrior
-):
-    def __init__(
-        self,
-        input_dim,
-        latent_dim,
-        num_domains,
-        n_species,
-        epochs=100,
-        lr=1e-4,
-        annealing_epochs=50,
-        patience=20,
-    ):
+class MultiVAE_Bernoulli_SpeciesPrior_Extended(MultiVAE_Bernoulli_SpeciesPrior):
+    def __init__(self, input_dim, latent_dim, num_domains, n_species, epochs=100, lr=1e-4, annealing_epochs=50, patience=20):
         super().__init__(input_dim, latent_dim, num_domains, n_species)
 
         self.epochs = epochs
@@ -66,9 +54,7 @@ class MultiVAE_Bernoulli_SpeciesPrior_Extended(
         self.annealing_epochs = annealing_epochs
         self.patience = patience
 
-        self.optimizer = optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=1e-5
-        )
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
 
         self.loss_during_training = []
         self.reconstruc_during_training = []
@@ -82,7 +68,7 @@ class MultiVAE_Bernoulli_SpeciesPrior_Extended(
         best_state = None
 
         for epoch in range(self.epochs):
-            beta = min(1.0, (epoch + 1) / self.annealing_epochs)
+            beta = 1
 
             # =======================
             #        TRAIN

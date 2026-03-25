@@ -116,7 +116,7 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
         best_state = None
 
         for epoch in range(self.epochs):
-            beta = min(1.0, (epoch + 1) / self.annealing_epochs)
+            beta = 1
 
             # =======================
             #        TRAIN
