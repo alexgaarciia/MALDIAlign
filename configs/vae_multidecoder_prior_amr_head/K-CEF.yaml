@@ -16,6 +16,7 @@ model:
   latent_dim: 64
   num_domains: 4
   n_species: 1
+  n_antibiotics: 1
 
 training:
   epochs: 100

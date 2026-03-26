@@ -17,10 +17,10 @@ model:
   n_species: 6
 
 training:
-  epochs: 200
+  epochs: 100
   lr: 1e-4
   annealing_epochs: 100
-  patience: 40
+  patience: 20
   metrics_plot_title: "VAE Multidecoder w/prior for species"
 
 evaluation:

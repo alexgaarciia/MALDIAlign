@@ -1,11 +1,11 @@
 experiment:
-  name: vae_multidecoder_prior_amr
+  name: vae_multidecoder_prior_multiamr
   seed: 42
   output_dir: experiments/results
 
 data:
-  pkl_path: /export/usuarios01/agnavarr/MALDIAlign/experiments/amr/pickles/E-CEF.pkl
-  domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "DRIAMS_D"]
+  pkl_path: /export/usuarios01/agnavarr/MALDIGen-dev/pickles/DRIAMS_study_amr_klebsiella3.pkl
+  domains: ["DRIAMS_A", "DRIAMS_D"]
   normalization: row_minmax
   test_size: 0.2
   batch_size: 64
@@ -14,13 +14,14 @@ data:
 model:
   type: vae_multidecoder_prior_amr_head
   latent_dim: 64
-  num_domains: 4
+  num_domains: 2
   n_species: 1
+  n_antibiotics: 2
 
 training:
   epochs: 100
   lr: 1e-4
-  lambda_amr: 5
+  lambda_amr: 10
   annealing_epochs: 50
   patience: 10
   metrics_plot_title: "VAE Multidecoder w/prior for species + AMR"
