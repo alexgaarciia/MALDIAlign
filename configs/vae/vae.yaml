@@ -4,10 +4,11 @@ experiment:
   output_dir: experiments/results
 
 data:
-  domains: ["DRIAMS_A", "DRIAMS_D"]
+  domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
+  species_list: ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
   normalization: row_minmax
   test_size: 0.2
-  batch_size: 64
+  batch_size: 128
   use_species_weights: False
 
 model: 
@@ -15,10 +16,10 @@ model:
   latent_dim: 64
 
 training: 
-  epochs: 200
+  epochs: 100
   lr: 1e-4
   annealing_epochs: 100
-  patience: 40
+  patience: 20
   metrics_plot_title: "VAE"
 
 evaluation:
