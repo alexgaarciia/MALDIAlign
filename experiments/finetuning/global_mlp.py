@@ -136,7 +136,7 @@ print("\n===== DATA LOADED =====")
 # LOAD SPLITS & DEFINE DOMAINS
 # ============================================================
 # Load splits
-experiment_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260401_162208")
+experiment_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260404_062545")
 
 with open(experiment_dir / "data_splits.pkl", "rb") as f:
     splits = pickle.load(f)

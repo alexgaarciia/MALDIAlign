@@ -27,12 +27,71 @@ print("Project root:", target)
 
 
 ############################
+# IMPORTS
+############################
+from src.config.loader import load_config
+from src.data.datasets import load_driams, load_msumg
+from src.data.splits import subsample_dataset_stratified
+
+
+############################
+# LOAD DATA
+############################
+# Species used during training
+TARGET_SPECIES = [
+    "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
+    "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
+
+print("\n===== LOADING DATA & SPLITS =====")
+
+# Load reference splits
+SOURCE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260401_162208/data_splits.pkl")
+
+if not SOURCE_SPLITS_PATH.exists():
+    raise FileNotFoundError(f"Splits not found in: {SOURCE_SPLITS_PATH}")
+
+with open(SOURCE_SPLITS_PATH, "rb") as f:
+    full_split_data = pickle.load(f)
+    source_splits = full_split_data["splits_per_domain"]
+
+print(f"Referece splits loaded from: {SOURCE_SPLITS_PATH}")
+
+# Create splits for unseen domains
+cfg = load_config()
+driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+
+# Filter DRIAMS-D
+mask_hosp_D = driams_dict["meta"]["hospital"] == "DRIAMS_D"
+mask_sp_D = np.isin(driams_dict["label"], TARGET_SPECIES)
+mask_D = mask_hosp_D & mask_sp_D
+global_idx_D = np.where(mask_D)[0]
+
+dataD = driams_dict["data"][mask_D]
+labelD = driams_dict["label"][mask_D]
+metaD = driams_dict["meta"][mask_D].reset_index(drop=True)
+
+# Filter MS-UMG
+mask_M = np.isin(msumg_dict["label"], TARGET_SPECIES)
+global_idx_M = np.where(mask_M)[0]
+dataM = msumg_dict["data"][mask_M]
+labelM = msumg_dict["label"][mask_M]
+metaM = msumg_dict["meta"][mask_M].reset_index(drop=True)
+
+# Generate splits
+d_split = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=250, global_indices=global_idx_D, ood=True)
+m_split = subsample_dataset_stratified(dataM, labelM, metaM, n_samples=250, global_indices=global_idx_M, ood=True)
+
+ood_data = {
+    "DRIAMS_D": {"ft_pool": d_split["finetuning"]["idx"], "test": d_split["test"]["idx"]},
+    "MS-UMG":   {"ft_pool": m_split["finetuning"]["idx"], "test": m_split["test"]["idx"]}
+}
+
+
+############################
 # OUTPUT DIRECTORY
 ############################
-BASE_OUTPUT = Path(
-    "/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data"
-)
-
+BASE_OUTPUT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data")
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 experiment_dir = BASE_OUTPUT / f"splits_{timestamp}"
 experiment_dir.mkdir(parents=True, exist_ok=True)
@@ -42,162 +101,43 @@ print("Saving splits to:", experiment_dir)
 
 
 ############################
-# IMPORTS
-############################
-from src.config.loader import load_config
-from src.data.datasets import (
-    load_driams,
-    load_marisma,
-    load_msumg,
-    load_rki)
-from src.data.splits import subsample_dataset_stratified
-
-
-############################
-# DATA PREPARATION
-############################
-cfg = load_config()
-
-# Load datasets
-driams_dict  = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-msumg_dict   = load_msumg(cfg["data"]["MSUMG_PKL"])  # already filters agar
-rki_dict     = load_rki(cfg["data"]["RKI_PKL"])
-
-# Unpack
-data_driams, label_driams, meta_driams = (
-    driams_dict["data"],
-    driams_dict["label"],
-    driams_dict["meta"],
-)
-
-data_marisma, label_marisma, meta_marisma = (
-    marisma_dict["data"],
-    marisma_dict["label"],
-    marisma_dict["meta"],
-)
-
-data_msumg, label_msumg, meta_msumg = (
-    msumg_dict["data"],
-    msumg_dict["label"],
-    msumg_dict["meta"],
-)
-
-data_rki, label_rki, meta_rki = (
-    rki_dict["data"],
-    rki_dict["label"],
-    rki_dict["meta"],
-)
-
-# Split DRIAMS by hospital using masks
-maskA = meta_driams["hospital"] == "DRIAMS_A"
-maskB = meta_driams["hospital"] == "DRIAMS_B"
-maskC = meta_driams["hospital"] == "DRIAMS_C"
-maskD = meta_driams["hospital"] == "DRIAMS_D"
-
-dataA, labelA, metaA = data_driams[maskA], label_driams[maskA], meta_driams[maskA]
-dataB, labelB, metaB = data_driams[maskB], label_driams[maskB], meta_driams[maskB]
-dataC, labelC, metaC = data_driams[maskC], label_driams[maskC], meta_driams[maskC]
-dataD, labelD, metaD = data_driams[maskD], label_driams[maskD], meta_driams[maskD]
-
-# Here we define what we will be using for "evaluation" and for "finetuning"
-D_full_split = subsample_dataset_stratified(
-    dataD,
-    labelD,
-    metaD,
-    n_samples = 250,
-    ood=True
-)
-
-# Pool for finetuning and evaluation
-D_pool_idx = D_full_split["finetuning"]["idx"]
-D_eval_idx = D_full_split["test"]["idx"]
-
-# Extract data
-dataD_pool  = dataD[D_pool_idx]
-labelD_pool = labelD[D_pool_idx]
-metaD_pool  = metaD.iloc[D_pool_idx].reset_index(drop=True)
-
-# Same for MS-UMG
-MSUMG_full_split = subsample_dataset_stratified(
-    data_msumg,
-    label_msumg,
-    meta_msumg,
-    n_samples = 250,
-    ood=True
-)
-
-MSUMG_pool_idx = MSUMG_full_split["finetuning"]["idx"]
-MSUMG_eval_idx = MSUMG_full_split["test"]["idx"]
-
-data_msumg_pool  = data_msumg[MSUMG_pool_idx]
-label_msumg_pool = label_msumg[MSUMG_pool_idx]
-meta_msumg_pool  = meta_msumg.iloc[MSUMG_pool_idx].reset_index(drop=True)
-
-print("\n===== DATA LOADED =====")
-
-
-############################
 # STRATIFIED SUBSAMPLING
 ############################
-print("\n===== STRATIFIED SUBSAMPLING =====")
+domains_prev = ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
+domains_new  = ["DRIAMS_D", "MS-UMG"]
 
+print("\n===== GENERATING SUB-SPLITS GRID =====")
 grid_prev = np.arange(0, 251, 50)
 grid_new = np.arange(50, 251, 50)
 
-print("\n===== SAVING SPLITS & DATA =====")
 for n_prev in grid_prev:
-    # Previous domains
-    A_split  = subsample_dataset_stratified(dataA, labelA, metaA, n_samples=n_prev)
-    B_split  = subsample_dataset_stratified(dataB, labelB, metaB, n_samples=n_prev)
-    C_split  = subsample_dataset_stratified(dataC, labelC, metaC, n_samples=n_prev)
-    M_split  = subsample_dataset_stratified(data_marisma, label_marisma, meta_marisma, n_samples=n_prev)
-    R_split  = subsample_dataset_stratified(data_rki, label_rki, meta_rki, n_samples=n_prev)
-
     for n_new in grid_new:
-        D_sub = subsample_dataset_stratified(
-            dataD_pool,
-            labelD_pool,
-            metaD_pool,
-            n_samples=n_new,
-            ood=False
-        )
+        current_experiment_splits = {}
 
-        MSUMG_sub = subsample_dataset_stratified(
-            data_msumg_pool,
-            label_msumg_pool,
-            meta_msumg_pool,
-            n_samples=n_new,
-            ood=False
-        )
+        # Process domains used in training
+        for dom in domains_prev:
+            vae_train = source_splits[dom]["train_idx"]
+            current_experiment_splits[dom] = {
+                "finetuning": vae_train[:n_prev] if n_prev > 0 else np.array([], dtype=int)
+            }
 
-        # Map back to original indices
-        D_ft_idx_real = D_pool_idx[D_sub["finetuning"]["idx"]]
-        MSUMG_ft_idx_real = MSUMG_pool_idx[MSUMG_sub["finetuning"]["idx"]]
-
-        ############################
-        # SAVE SPLITS
-        ############################
-        splits_idx = {
-            "DRIAMS_A": {"finetuning": A_split["finetuning"]["idx"]},
-            "DRIAMS_B": {"finetuning": B_split["finetuning"]["idx"]},
-            "DRIAMS_C": {"finetuning": C_split["finetuning"]["idx"]},
-            "MARISMA":  {"finetuning": M_split["finetuning"]["idx"]},
-            "RKI":      {"finetuning": R_split["finetuning"]["idx"]},
-            "DRIAMS_D": {
-                "finetuning": D_ft_idx_real,
-                "test": D_eval_idx,
-            },
-            "MS-UMG": {
-                "finetuning": MSUMG_ft_idx_real,
-                "test": MSUMG_eval_idx,
-            },
-        }
+        # New domains
+        for dom in domains_new:
+            ft_pool = ood_data[dom]["ft_pool"]
+            test_idx = ood_data[dom]["test"]
+            
+            sub_idx_ft = ft_pool[:n_new]
+            
+            current_experiment_splits[dom] = {
+                "finetuning": sub_idx_ft,
+                "test": test_idx
+            }
 
         file_name = f"prev_{n_prev}_new_{n_new}.pkl"
         with open(experiment_dir / file_name, "wb") as f:
-            pickle.dump(splits_idx, f)
+            pickle.dump(current_experiment_splits, f)
 
         print(f"Saved to: {experiment_dir / file_name}")
 
 print("\n===== DONE =====")
+print(f"All {len(grid_prev)*len(grid_new)} split files generated")
