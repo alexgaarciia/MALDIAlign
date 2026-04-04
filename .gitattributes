@@ -13,7 +13,6 @@ experiments/results/finetuning_vae_multidecoder_prior/20260211_143045/model.pth 
 experiments/amr/pickles/E-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/K-CEF.pkl filter=lfs diff=lfs merge=lfs -text
 experiments/amr/pickles/S-OXA.pkl filter=lfs diff=lfs merge=lfs -text
-experiments/finetuning/results/**/*.pth filter=lfs diff=lfs merge=lfs -text
 experiments/results/vae_multidecoder/20260324_121404/model.pth filter=lfs diff=lfs merge=lfs -text
 experiments/results/vae_multidecoder_coral/20260404_111934/model.pth filter=lfs diff=lfs merge=lfs -text
 experiments/results/vae_bernoulli/20260403_204619/model.pth filter=lfs diff=lfs merge=lfs -text
