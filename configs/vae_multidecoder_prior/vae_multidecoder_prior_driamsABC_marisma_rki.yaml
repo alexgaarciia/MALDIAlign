@@ -5,9 +5,10 @@ experiment:
 
 data:
   domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
+  species_list: ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
   normalization: row_minmax
   test_size: 0.2
-  batch_size: 64
+  batch_size: 128
   use_species_weights: False
 
 model:
@@ -27,6 +28,6 @@ evaluation:
   use_domain: false
   compute_tsne: true
 
-  prior_sampling: true
+  prior_sampling: false
   prior_samples_per_species: 50
   

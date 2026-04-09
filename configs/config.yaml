@@ -1,7 +1,17 @@
 data:
   PATH_BACTERIA_ID: "/export/data_ml4ds/bacteria_id"
   MARISMa_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/MARISMa_study.pkl"
+  MARISMa_REDUCED_PKL2: "/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/MARISMa_study.pkl"
   DRIAMS_REDUCED_PKL: "/export/data_ml4ds/bacteria_id/codigoMALDIVAS/pickles/DRIAMS_study.pkl"
-  DRIAMS_REDUCED_PKL2: "/export/usuarios01/agnavarr/MALDIAlign/DRIAMS_study.pkl"
+  DRIAMS_REDUCED_PKL2: "/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/DRIAMS_study.pkl"
   RKI_PKL: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/RKI_study_species.pkl"
   MSUMG_PKL: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/MSUMG_study_amr.pkl"
+  KLEBSIELLA_MULTIAMR: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/DRIAMS_study_amr_klebsiella.pkl"
+  KLEBSIELLA_MULTIAMR2: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/DRIAMS_study_amr_klebsiella2.pkl"
+  MARISMA_KLEBSIELLA_MULTIAMR: "/export/usuarios01/agnavarr/MALDIGen-dev/pickles/MARISMa_study_multiamr.pkl"
+
+  DRIAMS_FULL: /export/data_ml4ds/bacteria_id/MALDIAlign_Alex/DRIAMS_study_full.pkl
+  MARISMa_FULL: /export/data_ml4ds/bacteria_id/MALDIAlign_Alex/MARISMa_study_full_dataset.pkl
+  RKI_FULL: /export/data_ml4ds/bacteria_id/MALDIAlign_Alex/RKI_study_full.pkl
+  MSUMG_FULL: /export/data_ml4ds/bacteria_id/MALDIAlign_Alex/MSUMG_study_full.pkl
+  
