@@ -28,13 +28,13 @@ import joblib
 import pickle
 
 import numpy as np
-import pandas as pd
 
 from src.config.loader import *
 from src.data.datasets import *
 from src.data.preprocessing import *
 from src.evaluation.metrics import *
 from src.visualization.viz import *
+from src.evaluation.eval import load_model, encode_latent
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import GridSearchCV
@@ -51,10 +51,10 @@ print("="*60)
 
 cfg = load_config()
 
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-rki_dict = load_rki(cfg["data"]["RKI_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+marisma_dict = load_marisma(cfg["data"]["MARISMa_FULL"])
+rki_dict = load_rki(cfg["data"]["RKI_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 # Define the species that we want to keep
 species_to_keep = ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
@@ -138,7 +138,7 @@ print("\n===== DATA LOADED =====")
 # LOAD SPLITS & DEFINE DOMAINS
 # ============================================================
 # Load splits
-experiment_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260404_062545")
+experiment_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
 with open(experiment_dir / "data_splits.pkl", "rb") as f:
     splits = pickle.load(f)
@@ -206,26 +206,6 @@ print("===== LOADING PRETRAINED VAE =====")
 print("="*60)
 
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
-def load_model(model, path):
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model.load_state_dict(torch.load(path, map_location=device))
-    model.to(device)
-    model.eval()
-    return model
-
-def encode_latent(model, X, device, batch_size=256):
-    Z = []
-    X_tensor = torch.tensor(X, dtype=torch.float32)
-
-    loader = torch.utils.data.DataLoader(X_tensor, batch_size=batch_size)
-
-    with torch.no_grad():
-        for x in loader:
-            x = x.to(device)
-            mu, _ = model.encoder(x)
-            Z.append(mu.cpu().numpy())
-
-    return np.vstack(Z)
 
 # VAE entrenado SOLO en A+B+C+MARISMA+RKI (sin D ni MSUMG)
 data_seen = np.vstack([dataA, dataB, dataC, data_marisma, data_rki])

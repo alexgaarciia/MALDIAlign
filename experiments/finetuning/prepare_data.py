@@ -45,7 +45,7 @@ TARGET_SPECIES = [
 print("\n===== LOADING DATA & SPLITS =====")
 
 # Load reference splits
-SOURCE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260401_162208/data_splits.pkl")
+SOURCE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
 
 if not SOURCE_SPLITS_PATH.exists():
     raise FileNotFoundError(f"Splits not found in: {SOURCE_SPLITS_PATH}")
@@ -58,18 +58,22 @@ print(f"Referece splits loaded from: {SOURCE_SPLITS_PATH}")
 
 # Create splits for unseen domains
 cfg = load_config()
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 # Filter DRIAMS-D
-mask_hosp_D = driams_dict["meta"]["hospital"] == "DRIAMS_D"
-mask_sp_D = np.isin(driams_dict["label"], TARGET_SPECIES)
-mask_D = mask_hosp_D & mask_sp_D
-global_idx_D = np.where(mask_D)[0]
+# Filter by species
+mask_sp_driams = np.isin(driams_dict["label"], TARGET_SPECIES)
+data_driams_filtered = driams_dict["data"][mask_sp_driams]
+label_driams_filtered = driams_dict["label"][mask_sp_driams]
+meta_driams_filtered = driams_dict["meta"][mask_sp_driams].reset_index(drop=True)
 
-dataD = driams_dict["data"][mask_D]
-labelD = driams_dict["label"][mask_D]
-metaD = driams_dict["meta"][mask_D].reset_index(drop=True)
+# Filter by hospital D
+mask_hosp_D = meta_driams_filtered["hospital"] == "DRIAMS_D"
+dataD = data_driams_filtered[mask_hosp_D]
+labelD = label_driams_filtered[mask_hosp_D]
+metaD = meta_driams_filtered[mask_hosp_D].reset_index(drop=True)
+local_idx_D = np.arange(len(dataD)) 
 
 # Filter MS-UMG
 mask_M = np.isin(msumg_dict["label"], TARGET_SPECIES)
@@ -77,10 +81,11 @@ global_idx_M = np.where(mask_M)[0]
 dataM = msumg_dict["data"][mask_M]
 labelM = msumg_dict["label"][mask_M]
 metaM = msumg_dict["meta"][mask_M].reset_index(drop=True)
+local_idx_M = np.arange(len(dataM))
 
 # Generate splits
-d_split = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=250, global_indices=global_idx_D, ood=True)
-m_split = subsample_dataset_stratified(dataM, labelM, metaM, n_samples=250, global_indices=global_idx_M, ood=True)
+d_split = subsample_dataset_stratified(dataD, labelD, metaD, n_samples=250, global_indices=local_idx_D, ood=True)
+m_split = subsample_dataset_stratified(dataM, labelM, metaM, n_samples=250, global_indices=local_idx_M, ood=True)
 
 ood_data = {
     "DRIAMS_D": {"ft_pool": d_split["finetuning"]["idx"], "test": d_split["test"]["idx"]},

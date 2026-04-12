@@ -71,7 +71,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
 
 
     ####################
-    # LOAD DATA (CORREGIDO BIEN)
+    # LOAD DATA 
     ####################
     print("\n===== LOADING DATA =====")
     cfg = load_config()
@@ -81,88 +81,104 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"
     ]   
 
-    # Load datasets
-    driams_dict  = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-    marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-    rki_dict     = load_rki(cfg["data"]["RKI_PKL"])
-    msumg_dict   = load_msumg(cfg["data"]["MSUMG_PKL"])
+    driams_pkl = cfg["data"]["DRIAMS_FULL"]
+    driams_A = load_driams(driams_pkl, filter=["DRIAMS_A"])["DRIAMS_A"]
+    driams_B = load_driams(driams_pkl, filter=["DRIAMS_B"])["DRIAMS_B"]
+    driams_C = load_driams(driams_pkl, filter=["DRIAMS_C"])["DRIAMS_C"]
+    driams_D = load_driams(driams_pkl, filter=["DRIAMS_D"])["DRIAMS_D"]
+    marisma = load_marisma(cfg["data"]["MARISMa_FULL"])
+    rki = load_rki(cfg["data"]["RKI_FULL"])
+    msumg = load_msumg(cfg["data"]["MSUMG_FULL"])
 
-    # Normalize
-    data_driams_norm = row_minmax_normalize(driams_dict["data"])
-    data_marisma_norm = row_minmax_normalize(marisma_dict["data"])
-    data_rki_norm = row_minmax_normalize(rki_dict["data"])
-    data_msumg_norm = row_minmax_normalize(msumg_dict["data"])
+    ####################
+    # CONCATENATE
+    ####################
+    data_list = [
+        driams_A["data"], driams_B["data"], driams_C["data"],
+        marisma["data"], rki["data"]
+    ]
 
+    label_list = [
+        driams_A["label"], driams_B["label"], driams_C["label"],
+        marisma["label"], rki["label"]
+    ]
+
+    meta_list = [
+        driams_A["meta"], driams_B["meta"], driams_C["meta"],
+        marisma["meta"], rki["meta"]
+    ]
+
+    data_all_raw = np.vstack(data_list)
+    label_all_raw = np.concatenate(label_list)
+    meta_all_raw = pd.concat(meta_list, ignore_index=True)
+
+    ####################
+    # FILTER BY SPECIES
+    ####################
+    mask_sp = np.isin(label_all_raw, TARGET_SPECIES)
+    data_all = data_all_raw[mask_sp]
+    label_all = label_all_raw[mask_sp]
+    meta_all = meta_all_raw.iloc[mask_sp].reset_index(drop=True)
+
+    ####################
+    # NORMALIZE
+    ####################
+    data_all = row_minmax_normalize(data_all)
+
+    ####################
+    # LOAD SPLITS
+    ####################
     print("Loading finetuning indices...")
     with open(splits_path, "rb") as f:
         splits_idx = pickle.load(f)
 
-    # ============================
-    # RECONSTRUCT GLOBAL DATASET
-    # ============================
-    maskA = driams_dict["meta"]["hospital"] == "DRIAMS_A"
-    maskB = driams_dict["meta"]["hospital"] == "DRIAMS_B"
-    maskC = driams_dict["meta"]["hospital"] == "DRIAMS_C"
-
-    data_list = [
-        data_driams_norm[maskA],
-        data_driams_norm[maskB],
-        data_driams_norm[maskC],
-        data_marisma_norm,
-        data_rki_norm
-    ]
-
-    label_list = [
-        driams_dict["label"][maskA],
-        driams_dict["label"][maskB],
-        driams_dict["label"][maskC],
-        marisma_dict["label"],
-        rki_dict["label"]
-    ]
-
-    meta_list = [
-        driams_dict["meta"][maskA],
-        driams_dict["meta"][maskB],
-        driams_dict["meta"][maskC],
-        marisma_dict["meta"],
-        rki_dict["meta"]
-    ]
-
-    data_all = np.vstack(data_list)
-    label_all = np.concatenate(label_list)
-    meta_all = pd.concat(meta_list, ignore_index=True)
-
+    # Previous domains: indices are on data_all
     idxA = splits_idx["DRIAMS_A"]["finetuning"]
     idxB = splits_idx["DRIAMS_B"]["finetuning"]
     idxC = splits_idx["DRIAMS_C"]["finetuning"]
     idxM = splits_idx["MARISMA"]["finetuning"]
     idxR = splits_idx["RKI"]["finetuning"]
 
-    dataA_ft = data_all[idxA]
-    labelA_ft = label_all[idxA]
-    metaA_ft = meta_all.iloc[idxA].reset_index(drop=True)
+    dataA_ft = data_all[idxA] if len(idxA) > 0 else np.empty((0, data_all.shape[1]))
+    labelA_ft = label_all[idxA] if len(idxA) > 0 else np.array([])
+    metaA_ft = meta_all.iloc[idxA].reset_index(drop=True) if len(idxA) > 0 else pd.DataFrame()
 
-    dataB_ft = data_all[idxB]
-    labelB_ft = label_all[idxB]
-    metaB_ft = meta_all.iloc[idxB].reset_index(drop=True)
+    dataB_ft = data_all[idxB] if len(idxB) > 0 else np.empty((0, data_all.shape[1]))
+    labelB_ft = label_all[idxB] if len(idxB) > 0 else np.array([])
+    metaB_ft = meta_all.iloc[idxB].reset_index(drop=True) if len(idxB) > 0 else pd.DataFrame()
 
-    dataC_ft = data_all[idxC]
-    labelC_ft = label_all[idxC]
-    metaC_ft = meta_all.iloc[idxC].reset_index(drop=True)
+    dataC_ft = data_all[idxC] if len(idxC) > 0 else np.empty((0, data_all.shape[1]))
+    labelC_ft = label_all[idxC] if len(idxC) > 0 else np.array([])
+    metaC_ft = meta_all.iloc[idxC].reset_index(drop=True) if len(idxC) > 0 else pd.DataFrame()
 
-    dataM_ft = data_all[idxM]
-    labelM_ft = label_all[idxM]
-    metaM_ft = meta_all.iloc[idxM].reset_index(drop=True)
+    dataM_ft = data_all[idxM] if len(idxM) > 0 else np.empty((0, data_all.shape[1]))
+    labelM_ft = label_all[idxM] if len(idxM) > 0 else np.array([])
+    metaM_ft = meta_all.iloc[idxM].reset_index(drop=True) if len(idxM) > 0 else pd.DataFrame()
 
-    dataR_ft = data_all[idxR]
-    labelR_ft = label_all[idxR]
-    metaR_ft = meta_all.iloc[idxR].reset_index(drop=True)
+    dataR_ft = data_all[idxR] if len(idxR) > 0 else np.empty((0, data_all.shape[1]))
+    labelR_ft = label_all[idxR] if len(idxR) > 0 else np.array([])
+    metaR_ft = meta_all.iloc[idxR].reset_index(drop=True) if len(idxR) > 0 else pd.DataFrame()
+
+    print(f"Finetuning samples: A={len(dataA_ft)}, B={len(dataB_ft)}, C={len(dataC_ft)}, M={len(dataM_ft)}, R={len(dataR_ft)}")
+
+    ####################
+    # TARGET DOMAIN (indices are local to filtered dataset)
+    ####################
+    mask_sp_D = np.isin(driams_D["label"], TARGET_SPECIES)
+    dataD = row_minmax_normalize(driams_D["data"][mask_sp_D])
+    labelD = driams_D["label"][mask_sp_D]
+    metaD = driams_D["meta"].iloc[mask_sp_D].reset_index(drop=True)
+
+    mask_sp_M = np.isin(msumg["label"], TARGET_SPECIES)
+    data_msumg = row_minmax_normalize(msumg["data"][mask_sp_M])
+    label_msumg = msumg["label"][mask_sp_M]
+    meta_msumg = msumg["meta"].iloc[mask_sp_M].reset_index(drop=True)
 
     if target_domain == "DRIAMS_D":
         idx_target = splits_idx["DRIAMS_D"]["finetuning"]
-        data_target = data_driams_norm[idx_target]
-        label_target = driams_dict["label"][idx_target]
-        meta_target = driams_dict["meta"].iloc[idx_target].reset_index(drop=True)
+        data_target = dataD[idx_target]
+        label_target = labelD[idx_target]
+        meta_target = metaD.iloc[idx_target].reset_index(drop=True)
 
         DOMAIN_MAP = {
             "DRIAMS_A": 0,
@@ -175,9 +191,9 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
 
     elif target_domain == "MS-UMG":
         idx_target = splits_idx["MS-UMG"]["finetuning"]
-        data_target = data_msumg_norm[idx_target]
-        label_target = msumg_dict["label"][idx_target]
-        meta_target = msumg_dict["meta"].iloc[idx_target].reset_index(drop=True)
+        data_target = data_msumg[idx_target]
+        label_target = label_msumg[idx_target]
+        meta_target = meta_msumg.iloc[idx_target].reset_index(drop=True)
 
         DOMAIN_MAP = {
             "DRIAMS_A": 0,
@@ -206,18 +222,13 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
         y_ft = label_target
         meta_ft = meta_target.copy()
 
-    # Keep only species seen during pretraining
-    mask_sp = np.isin(y_ft, TARGET_SPECIES)
-
-    X_ft = X_ft[mask_sp]
-    y_ft = y_ft[mask_sp]
-    meta_ft = meta_ft.iloc[mask_sp].reset_index(drop=True)
     domain_ft = meta_ft["hospital"].map(DOMAIN_MAP).values.astype(np.int64)
 
     # Robust label encoder
     species_encoder = LabelEncoder()
     species_encoder.fit(TARGET_SPECIES)
     species_ft = species_encoder.transform(y_ft)
+    print(f"Finetuning samples: {len(X_ft)}")
 
 
     ####################

@@ -51,15 +51,19 @@ print("\n===== LOADING DATA =====")
 
 cfg = load_config()
 
-TARGET_SPECIES = ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
+TARGET_SPECIES = ["Klebsiella_Pneumoniae", "Escherichia_Coli", "Staphylococcus_Aureus", "Pseudomonas_Aeruginosa", "Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
 le = LabelEncoder()
 le.fit(TARGET_SPECIES)
 
 # Load MS-UMG
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
-data_msumg, label_msumg, meta_msumg = msumg_dict["data"], msumg_dict["label"], msumg_dict["meta"]
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
+mask_sp = np.isin(msumg_dict["label"], TARGET_SPECIES)
+data_msumg = msumg_dict["data"][mask_sp]
+label_msumg = msumg_dict["label"][mask_sp]
+meta_msumg = msumg_dict["meta"][mask_sp].reset_index(drop=True)
 data_msumg = row_minmax_normalize(data_msumg)
 
+print(f"MS-UMG samples (filtered by species): {len(data_msumg)}")
 print("\n===== DATA LOADED =====")
 
 
@@ -68,11 +72,11 @@ print("\n===== DATA LOADED =====")
 ############################################################
 print("\n===== LOADING PRETRAINED MODELS =====")
 
-PATH_RF_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260404_092934/rf_original_ABC_MAR_RKI.joblib")
-PATH_RF_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260404_092934/rf_latent_ABC_MAR_RKI.joblib")
-PRETRAINED_MLP_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260404_092142/mlp_original_ABC_MAR_RKI.pth")
-PRETRAINED_MLP_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260404_092142/mlp_latent_ABC_MAR_RKI.pth")
-PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260404_062545/model.pth")
+PATH_RF_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260409_113358/rf_original_ABC_MAR_RKI.joblib")
+PATH_RF_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260409_113358/rf_latent_ABC_MAR_RKI.joblib")
+PRETRAINED_MLP_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260409_112714/mlp_original_ABC_MAR_RKI.pth")
+PRETRAINED_MLP_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260409_112714/mlp_latent_ABC_MAR_RKI.pth")
+PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/model.pth")
 OUTPUT_PATH = Path("/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/finetuning_6species")
 
 baseline_rf_original = joblib.load(PATH_RF_ORIGINAL)
@@ -103,7 +107,7 @@ print("\n===== BASELINE MODELS LOADED =====")
 ############################################################
 # GRID SETUP
 ############################################################
-SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260401_171323")
+SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260412_094007")
 
 grid_prev = np.arange(0, 251, 50)
 grid_new  = np.arange(50, 251, 50)
@@ -119,16 +123,16 @@ for n_prev in grid_prev:
     for n_new in grid_new:
         print(f"\n--- Running n_prev={n_prev}, n_new={n_new} ---")
 
-        # --------------------------------------------------
+        ############################################################
         # Load split indices
-        # --------------------------------------------------
+        ############################################################
         split_file = SPLITS_PATH / f"prev_{n_prev}_new_{n_new}.pkl"
         splits = load_pkl(split_file)
         idx_test, idx_ft = splits["MS-UMG"]["test"], splits["MS-UMG"]["finetuning"]
 
-        # --------------------------------------------------
+        ############################################################
         # Build TEST and FINETUNING set (fixed evaluation set)
-        # --------------------------------------------------
+        ############################################################
         X_test, y_test = data_msumg[idx_test], label_msumg[idx_test]
         X_ft, y_ft = data_msumg[idx_ft], label_msumg[idx_ft]
 
@@ -138,9 +142,9 @@ for n_prev in grid_prev:
 
         test_loader_orig = make_loader(X_test, y_test_enc)
 
-        # ==================================================
+        ############################################################
         # A. BASELINE RF (ORIGINAL SPACE)
-        # ==================================================
+        ############################################################
         metrics_orig = metrics_report(
             X_test, y_test,
             baseline_rf_original,
@@ -156,9 +160,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # ==================================================
+        ############################################################
         # B. BASELINE RF (LATENT SPACE) ZERO-SHOT
-        # ==================================================
+        ############################################################
         Z_test_zero = encode_latent(vae_pretrained, X_test, device)
         test_loader_lat = make_loader(Z_test_zero, y_test_enc)
 
@@ -177,9 +181,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # ==================================================
+        ############################################################
         # C. RF AND MLP TRAINED ONLY ON FEW-SHOT TARGET DATA
-        # ==================================================
+        ############################################################
         rf_few = RandomForestClassifier(
             n_estimators=200,
             max_depth=20,
@@ -227,9 +231,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # ==================================================
+        ############################################################
         # D. FINETUNING (FULL)
-        # ==================================================
+        ############################################################
         vae_full, species_encoder_full, DOMAIN_MAP_full = run_finetuning(
             splits_path=split_file,
             target_domain="MS-UMG",
@@ -264,9 +268,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # ==================================================
+        ############################################################
         # E. FINETUNING (FREEZE PRIORS)
-        # ==================================================
+        ############################################################
         vae_freeze, species_encoder_freeze, DOMAIN_MAP_freeze = run_finetuning(
             splits_path=split_file,
             target_domain="MS-UMG",
@@ -301,9 +305,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # ==================================================
+        ############################################################
         # F. FINETUNING (DECODER ONLY)
-        # ==================================================
+        ############################################################
         vae_dec, _, _ = run_finetuning(
             splits_path=split_file,
             target_domain="MS-UMG",
@@ -336,9 +340,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # # ==================================================
-        # # G. FINETUNING (PARTIAL ENCODER)
-        # # ==================================================
+        ############################################################
+        # G. FINETUNING (PARTIAL ENCODER)
+        ############################################################
         vae_partial, _, _ = run_finetuning(
             splits_path=split_file,
             target_domain="MS-UMG",
@@ -371,9 +375,9 @@ for n_prev in grid_prev:
             class_names=le.classes_
         )
 
-        # --------------------------------------------------
+        ############################################################
         # Store results
-        # --------------------------------------------------
+        ############################################################
         for model_name, metrics in [
             ("RF_original", metrics_orig),
             ("MLP_original", metrics_mlp_orig),
@@ -405,6 +409,7 @@ for n_prev in grid_prev:
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
                 "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc_macro": metrics["ROC_AUC_Macro"],
                 "confusion_matrix": json.dumps(metrics["Confusion Matrix"].tolist())
             })
 
