@@ -1,70 +1,72 @@
 import torch
 import numpy as np
+import pandas as pd
+
+from torch.utils.data import TensorDataset, DataLoader
+
 from src.visualization.viz import compute_tsne_df, compute_tsne_per_species, plot_tsne_global, plot_tsne_species
+from src.visualization.amr_viz import plot_tsne_amr
 
 
 def eval_model(model, dataloader, device, use_domain=False):
     """
-    Extract latent representations for all samples in a given dataloader.
+    Extracts latent representations for all samples in a given dataloader.
 
-    This function runs the model's encoder in evaluation mode and returns
-    a deterministic latent representation for each input sample. It supports
-    both probabilistic encoders (e.g. VAEs) and deterministic encoders
-    (e.g. Domain-Adversarial Neural Networks).
+    Supports probabilistic encoders (extracting the mean μ) and deterministic 
+    encoders. The function dynamically handles batch sizes of 2, 3, or 4 elements 
+    to accommodate domain, species, and AMR data. Conditioning is applied if 
+    the model possesses a `domain_emb` or if `use_domain` is enabled via one-hot 
+    encoding.
 
-    - For VAE-like models, the latent representation corresponds to the
-      posterior mean μ of q(z | x).
-    - For deterministic models (e.g. DANN), the latent representation
-      corresponds directly to the encoder output z.
+    Args:
+        model (torch.nn.Module): Trained model exposing an `encoder` module.
+        dataloader (torch.utils.data.DataLoader): Data provider for batches.
+        device (torch.device): Device (CPU/CUDA) for evaluation.
+        use_domain (bool): If True, provides one-hot domain conditioning to the 
+            encoder (requires `model.cond_dim`).
 
-    Conditional encoders are also supported when `use_domain=True`.
-
-    Parameters
-    ----------
-    model : torch.nn.Module
-        Trained model exposing an `encoder` module. The encoder may return
-        either:
-        - a tuple (mu, logvar) for probabilistic models, or
-        - a single tensor z for deterministic models.
-    dataloader : torch.utils.data.DataLoader
-        DataLoader providing batches of input samples. Each batch is expected
-        to be either:
-        - (x, domain_id, species_id), or
-        - (x, domain_id).
-    device : torch.device
-        Device on which the model and data are evaluated.
-    use_domain : bool, optional
-        If True and the model supports conditional encoding, domain information
-        is provided to the encoder as a one-hot conditioning vector.
-        Default is False.
-
-    Returns
-    -------
-    mus_all : np.ndarray
-        Array of shape (N, latent_dim) containing the latent representations
-        for all samples in the dataloader.
+    Returns:
+        np.ndarray: Concatenated latent representations of shape (N, latent_dim).
     """
-
+    
     model.eval()
     model.to(device)
+
     mus_all = []
 
     with torch.no_grad():
+
         for batch in dataloader:
+
+            # ------------------------
+            # Unpack batch
+            # ------------------------
             if len(batch) == 4:
-                x, domain_id, species_id, _ = batch   # ignoramos AMR
+                x, domain_id, species_id, amr = batch
             elif len(batch) == 3:
                 x, domain_id, species_id = batch
+                amr = None
             elif len(batch) == 2:
                 x, domain_id = batch
                 species_id = None
+                amr = None
             else:
                 raise ValueError(f"Unexpected batch length: {len(batch)}")
 
             x = x.to(device)
 
-            # Conditional encoder (domain-conditioned)
-            if use_domain and hasattr(model, "cond_dim"):
+            # ------------------------
+            # Conditional encoder (AMR)
+            # ------------------------
+            if hasattr(model, "domain_emb"):
+                domain_id = domain_id.to(device)
+                c = model.domain_emb(domain_id)
+                mu, _ = model.encoder(x, c)
+
+            # ------------------------
+            # Domain conditioning
+            # ------------------------
+            elif use_domain and hasattr(model, "cond_dim"):
                 domain_id = domain_id.to(device)
                 c = torch.nn.functional.one_hot(
                     domain_id,
@@ -73,53 +75,65 @@ def eval_model(model, dataloader, device, use_domain=False):
 
                 mu, _ = model.encoder(x, c)
 
-            # Plain encoder
+            # ------------------------
+            # Standard encoder
+            # ------------------------
             else:
-                enc_out = model.encoder(x)
-
-                if isinstance(enc_out, tuple):
-                    # VAE-style
-                    mu, _ = enc_out
+                out = model.encoder(x)
+                if isinstance(out, tuple):
+                    mu, _ = out
                 else:
-                    # DANN-style
-                    mu = enc_out
+                    mu = out
 
             mus_all.append(mu.cpu().numpy())
 
     return np.concatenate(mus_all, axis=0)
 
 
-def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix):
+def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, prior_samples=None, prior_labels=None, antibiotics_list=None):
     """
-    Run t-SNE analysis on latent representations and generate visualization plots.
+    Executes a t-SNE visualization suite on latent representations.
 
-    This function computes t-SNE embeddings from the provided latent vectors
-    and generates multiple visualizations, including:
-    - global t-SNE
-    - per-species t-SNE
-    - optional hospital/domain overlays
+    Computes t-SNE embeddings and generates multiple plots, including global 
+    distributions, species-specific clusters, and hospital/year overlays. 
+    Optionally incorporates prior distribution samples for comparison and 
+    generates AMR-specific visualizations for listed antibiotics.
 
-    All plots are saved to the specified output directory.
+    Args:
+        mus_all (np.ndarray): Latent representations of real samples.
+        label_final (np.ndarray): Class/species labels for real samples.
+        meta_final (pd.DataFrame): Metadata (hospital, year, AMR status).
+        output_dir (Path): Directory where PNG plots will be saved.
+        prefix (str): String prefix for identifying saved files.
+        prior_samples (np.ndarray, optional): Latent samples from a prior.
+        prior_labels (np.ndarray, optional): Labels for the prior samples.
+        antibiotics_list (list of str, optional): Antibiotic columns to plot.
 
-    Parameters
-    ----------
-    mus_all : np.ndarray
-        Latent representations of shape (N, latent_dim) for all samples.
-    label_final : np.ndarray
-        Array of class labels corresponding to each sample.
-    meta_final : pandas.DataFrame
-        Metadata DataFrame containing sample-level information (e.g. hospital).
-    output_dir : pathlib.Path
-        Directory where all generated plots will be saved.
-
-    Returns
-    -------
-    None
-        The function produces and saves plots to disk but does not return values.
+    Returns:
+        None: Plots are saved directly to the specified directory.
     """
 
-    tsne_df = compute_tsne_df(mus_all, label_final, meta_final)
-    df_all, tsne_results = compute_tsne_per_species(mus_all, label_final, meta_final)
+    if prior_samples is not None and prior_labels is not None:
+        prior_meta = pd.DataFrame({
+            "year": [np.nan] * len(prior_labels),
+            "hospital": ["Prior"] * len(prior_labels)
+        })
+
+        X_total = np.vstack([mus_all, prior_samples])
+        labels_total = np.concatenate([label_final, prior_labels])
+
+        source = ["real"] * len(label_final) + ["prior"] * len(prior_labels)
+
+        meta_total = pd.concat([meta_final, prior_meta], ignore_index=True)
+
+    else:
+        X_total = mus_all
+        labels_total = label_final
+        meta_total = meta_final
+        source = None
+
+    tsne_df = compute_tsne_df(X_total, labels_total, meta_total, source)  
+    df_all, tsne_results = compute_tsne_per_species(X_total, labels_total, meta_total, source=source)  
 
     plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, save=True, path=output_dir / f"{prefix}_tsne_global.png")
     plot_tsne_global(tsne_df, per_species=True, overlay_per_hospital=False, save=True, path=output_dir / f"{prefix}_tsne_global_species.png")
@@ -129,33 +143,35 @@ def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix):
     plot_tsne_species(df_all, tsne_results, overlay_per_hospital=True, save=True, path=output_dir / f"{prefix}_tsne_species_overlay.png")
     plot_tsne_species(df_all, tsne_results, overlay_per_year_per_species=True, save=True, path=output_dir / f"{prefix}_tsne_species_overlay_year.png")
 
+    if antibiotics_list is not None:
+        print(f"Generating AMR t-SNE plots for: {antibiotics_list}")
+        for atb in antibiotics_list:
+            if atb in df_all.columns:
+                safe_atb = atb.replace("/", "-")
+                out_path = output_dir / f"{prefix}_tsne_amr_{safe_atb}.png"
+                plot_tsne_amr(df_all, tsne_results, antibiotic_col=atb, save=True, path=out_path)
+    else:
+        print("No AMR data provided. Skipping AMR t-SNE plots.")
 
-def encode_latent(model, X, device, batch_size=256):
+
+def encode_latent(model, X, device, domain=None, amr=None, batch_size=256):
     """
-    Encode input data into latent space using a trained VAE model.
+    Encodes raw numpy arrays into latent space by wrapping them in a DataLoader.
 
-    This function passes the input data through the model's encoder
-    and extracts the posterior mean (μ) of the latent distribution
-    for each sample. It assumes a VAE-style encoder returning (mu, logvar).
+    A utility for out-of-training inference. It handles optional conditioning 
+    on domain embeddings or AMR status and extracts the deterministic latent 
+    mean from the encoder.
 
-    Parameters
-    ----------
-    model : torch.nn.Module
-        Trained model containing an `encoder` method that returns
-        (mu, logvar).
-    X : np.ndarray
-        Input data of shape (N, input_dim), where N is the number
-        of samples.
-    device : torch.device
-        Device on which computation will be performed (CPU or CUDA).
-    batch_size : int, optional (default=256)
-        Batch size used during encoding to avoid memory overflow.
+    Args:
+        model (torch.nn.Module): Model with an `encoder` module.
+        X (np.ndarray): Feature matrix.
+        device (torch.device): Device (CPU/CUDA) for computation.
+        domain (np.ndarray, optional): Domain/hospital IDs for conditioning.
+        amr (np.ndarray, optional): AMR status for conditional encoding.
+        batch_size (int): Size of batches for processing.
 
-    Returns
-    -------
-    Z : np.ndarray
-        Latent representations of shape (N, latent_dim),
-        corresponding to the posterior mean μ for each sample.
+    Returns:
+        np.ndarray: Stacked latent representations for the input features.
     """
 
     model.eval()
@@ -163,16 +179,104 @@ def encode_latent(model, X, device, batch_size=256):
 
     X_tensor = torch.tensor(X, dtype=torch.float32)
 
+    tensors = [X_tensor]
+
+    if domain is not None:
+        domain_tensor = torch.tensor(domain, dtype=torch.long)
+        tensors.append(domain_tensor)
+
+    if amr is not None:
+        amr_tensor = torch.tensor(amr, dtype=torch.float32)
+        tensors.append(amr_tensor)
+
+    dataset = torch.utils.data.TensorDataset(*tensors)
+
     loader = torch.utils.data.DataLoader(
-        X_tensor,
+        dataset,
         batch_size=batch_size,
         shuffle=False
     )
 
     with torch.no_grad():
-        for x in loader:
-            x = x.to(device)
-            mu, _ = model.encoder(x)
+
+        for batch in loader:
+
+            x = batch[0].to(device)
+
+            domain_id = None
+            a = None
+
+            if domain is not None:
+                domain_id = batch[1].to(device)
+
+            if amr is not None:
+                a = batch[-1].to(device).view(-1, 1)
+ 
+            # -------------------------
+            # Forward logic
+            # -------------------------
+            if hasattr(model, "domain_emb") and domain_id is not None:
+                c = model.domain_emb(domain_id)
+                out = model.encoder(x, c)
+
+            elif a is not None:
+                out = model.encoder(x, a)
+
+            else:
+                out = model.encoder(x)
+
+            # -------------------------
+            # VAE vs deterministic
+            # -------------------------
+            if isinstance(out, tuple):
+                mu, _ = out
+            else:
+                mu = out
+
             Z.append(mu.cpu().numpy())
 
     return np.vstack(Z)
+
+
+def make_loader(X, y, batch_size=256, shuffle=False):
+    """
+    Converts numpy arrays into a standard PyTorch DataLoader.
+
+    Args:
+        X (np.ndarray): Input feature arrays.
+        y (np.ndarray): Target label arrays.
+        batch_size (int): Number of samples per batch.
+        shuffle (bool): Whether to shuffle data every epoch.
+
+    Returns:
+        torch.utils.data.DataLoader: A DataLoader containing TensorDatasets.
+    """
+
+    return DataLoader(
+        TensorDataset(torch.tensor(X, dtype=torch.float32),
+                      torch.tensor(y, dtype=torch.long)),
+        batch_size=batch_size,
+        shuffle=shuffle
+    )
+
+
+def load_model(model, path):
+    """
+    Loads a model's state dictionary from disk and prepares it for inference.
+
+    Automatically detects the available hardware (CUDA vs CPU) to map 
+    storage, loads the weights, and sets the model to evaluation mode.
+
+    Args:
+        model (torch.nn.Module): The model architecture to populate.
+        path (str): File path to the saved `.pt` or `.pth` state dictionary.
+
+    Returns:
+        torch.nn.Module: The model moved to the appropriate device in eval mode.
+    """
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model.load_state_dict(torch.load(path, map_location=device))
+    model.to(device)
+    model.eval()
+    return model
