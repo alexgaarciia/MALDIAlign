@@ -42,19 +42,19 @@ from src.evaluation.eval import load_model, encode_latent
 # ============================================================
 # ARCHITECTURE TO TEST
 # ============================================================
-ARCHITECTURE = "coral"
+ARCHITECTURE = "vae"
 
 if ARCHITECTURE == "vae":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260403_204619")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260412_155836")
     OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_vae.csv")
 elif ARCHITECTURE == "vae_multidecoder_prior":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260404_062545")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
     OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_vae_multidecoder_prior.csv")
 elif ARCHITECTURE == "dann":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260403_222152")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260412_160450")
     OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_dann.csv")
 elif ARCHITECTURE == "coral":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260404_111934")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260412_160952")
     OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_coral.csv")
 
 
@@ -67,10 +67,10 @@ print("="*60)
 
 cfg = load_config()
 
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-rki_dict = load_rki(cfg["data"]["RKI_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+marisma_dict = load_marisma(cfg["data"]["MARISMa_FULL"])
+rki_dict = load_rki(cfg["data"]["RKI_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 species_to_keep = [
     "Klebsiella_Pneumoniae", "Escherichia_Coli", "Staphylococcus_Aureus",
@@ -222,16 +222,14 @@ elif ARCHITECTURE == "vae":
     Z_D = encode_latent(vae, dataD, device)
     Z_MSUMG = encode_latent(vae, data_msumg, device)
 
-elif ARCHITECTURE == "coral":
-    vae = load_model(
-        MultiVAE_CORAL(
-            input_dim=data_final.shape[1],
-            latent_dim=64,
-            num_domains=5   
-        ),
-        EXPERIMENT_DIR / "model.pth"
-    )
-
+elif ARCHITECTURE == "dann":
+    vae = load_model(DANNFull_Extended(
+        input_dim=data_final.shape[1],
+        latent_dim=64,
+        n_species=len(np.unique(label_final)),
+        n_domains=5), 
+        EXPERIMENT_DIR / "model.pth")
+    
     Z_final = encode_latent(vae, data_final, device)
     Z_D = encode_latent(vae, dataD, device)
     Z_MSUMG = encode_latent(vae, data_msumg, device)
@@ -344,7 +342,7 @@ for train_name in domains_train.keys():
         Z_te, _ = test_sets_latent[test_name]
 
         for space, model, grid in [
-            ("original", grid_orig.best_estimator_, grid_orig),
+            # ("original", grid_orig.best_estimator_, grid_orig),
             ("latent", grid_lat.best_estimator_, grid_lat)]:
             
             metrics = metrics_report(
@@ -362,6 +360,8 @@ for train_name in domains_train.keys():
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
                 "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"] 
             })
 
 

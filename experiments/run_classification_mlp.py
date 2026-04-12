@@ -42,21 +42,20 @@ from models.baselines.mlp import MLPClassifier_Extended
 # ============================================================
 # ARCHITECTURE TO TEST
 # ============================================================
-ARCHITECTURE = "coral"
+ARCHITECTURE = "vae"
 
 if ARCHITECTURE == "vae":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260403_204619")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260412_155836")
     OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_vae.csv")
 elif ARCHITECTURE == "vae_multidecoder_prior":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260404_062545")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
     OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_vae_multidecoder_prior.csv")
 elif ARCHITECTURE == "dann":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260403_222152")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260412_160450")
     OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_dann.csv")
 elif ARCHITECTURE == "coral":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/coral/????'")
+    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260412_160952")
     OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_coral.csv")
-
 
 
 # ============================================================
@@ -64,10 +63,10 @@ elif ARCHITECTURE == "coral":
 # ============================================================
 cfg = load_config()
 
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-rki_dict = load_rki(cfg["data"]["RKI_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+marisma_dict = load_marisma(cfg["data"]["MARISMa_FULL"])
+rki_dict = load_rki(cfg["data"]["RKI_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 species_to_keep = [
     "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
@@ -389,7 +388,9 @@ for train_name in domains_train.keys():
                 "balanced_accuracy": metrics["Balanced_Accuracy"],
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"]
+                "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"] 
             })
     
 

@@ -49,7 +49,7 @@ from models.baselines.mlp import MLPClassifier_Extended
 CHECKPOINT_PATH = Path("assets/MaldiTransformerS.ckpt") # (S, M, L or XL)
 OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_transformer_S.csv")
 N_PEAKS = 200 # El Transformer suele usar los 200 picos más intensos
-EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260401_162208")
+EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
 
 # ============================================================
@@ -61,10 +61,10 @@ print("="*60)
 
 cfg = load_config()
 
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-rki_dict = load_rki(cfg["data"]["RKI_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+marisma_dict = load_marisma(cfg["data"]["MARISMa_FULL"])
+rki_dict = load_rki(cfg["data"]["RKI_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 species_to_keep = [
     "Klebsiella_Pneumoniae", "Escherichia_Coli", "Staphylococcus_Aureus",
@@ -346,7 +346,9 @@ for train_name in domains_train.keys():
         test_loader_orig = make_loader(X_te, y_te_enc)
         test_loader_lat  = make_loader(Z_te, y_te_enc)
 
-        for space, model, loader in [("original", mlp_orig, test_loader_orig), ("latent", mlp_lat, test_loader_lat)]:
+        for space, model, loader in [
+            # ("original", mlp_orig, test_loader_orig), 
+            ("latent", mlp_lat, test_loader_lat)]:
             metrics = metrics_report_mlp(
                 loader,
                 model,
@@ -362,7 +364,9 @@ for train_name in domains_train.keys():
                 "balanced_accuracy": metrics["Balanced_Accuracy"],
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"]
+                "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"] 
             })
 
 

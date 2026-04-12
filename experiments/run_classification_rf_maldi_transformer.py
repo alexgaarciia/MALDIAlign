@@ -46,7 +46,7 @@ from src.evaluation.metrics import *
 CHECKPOINT_PATH = Path("assets/MaldiTransformerS.ckpt") # (S, M, L or XL)
 OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_transformer_S.csv")
 N_PEAKS = 200 # El Transformer suele usar los 200 picos más intensos
-EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260401_162208")
+EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
 
 # ============================================================
@@ -58,10 +58,10 @@ print("="*60)
 
 cfg = load_config()
 
-driams_dict = load_driams(cfg["data"]["DRIAMS_REDUCED_PKL"])
-marisma_dict = load_marisma(cfg["data"]["MARISMa_REDUCED_PKL"])
-rki_dict = load_rki(cfg["data"]["RKI_PKL"])
-msumg_dict = load_msumg(cfg["data"]["MSUMG_PKL"])
+driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
+marisma_dict = load_marisma(cfg["data"]["MARISMa_FULL"])
+rki_dict = load_rki(cfg["data"]["RKI_FULL"])
+msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 species_to_keep = [
     "Klebsiella_Pneumoniae", "Escherichia_Coli", "Staphylococcus_Aureus",
@@ -145,7 +145,6 @@ def get_transformer_latent(data_matrix, model, n_peaks=200, batch_size=256):
         batch_dict = {"mz": mzs, "intensity": intensities}
         
         with torch.no_grad():
-            # Extract [CLS] token
             z_seq = model.transformer(batch_dict)
             z_cls = z_seq[:, 0, :]
             all_z.append(z_cls.cpu().numpy())
@@ -284,11 +283,11 @@ for train_name in domains_train.keys():
 
     rf = RandomForestClassifier(class_weight="balanced_subsample", n_jobs=1, random_state=42)
 
-    # print("\n--- Running GridSearch (original) ---")
-    # grid_orig = GridSearchCV(rf, param_grid, cv=3, scoring="balanced_accuracy", n_jobs=-1)
-    # grid_orig.fit(X_tr, y_tr)
-    # print("Best params (orig):", grid_orig.best_params_)
-    # print("Best CV score (orig):", grid_orig.best_score_)
+    print("\n--- Running GridSearch (original) ---")
+    grid_orig = GridSearchCV(rf, param_grid, cv=3, scoring="balanced_accuracy", n_jobs=-1)
+    grid_orig.fit(X_tr, y_tr)
+    print("Best params (orig):", grid_orig.best_params_)
+    print("Best CV score (orig):", grid_orig.best_score_)
 
     print("\n--- Running GridSearch (latent) ---")
     grid_lat = GridSearchCV(rf, param_grid, cv=3, scoring="balanced_accuracy", n_jobs=1)
@@ -325,7 +324,10 @@ for train_name in domains_train.keys():
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
                 "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"] 
             })
+            
 
 # ============================================================
 # SAVE CSV
