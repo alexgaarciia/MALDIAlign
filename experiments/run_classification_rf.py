@@ -27,8 +27,9 @@ import pickle
 import numpy as np
 import pandas as pd
 import torch
+import argparse
 
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 
 # utils
@@ -42,20 +43,42 @@ from src.evaluation.eval import load_model, encode_latent
 # ============================================================
 # ARCHITECTURE TO TEST
 # ============================================================
-ARCHITECTURE = "vae"
+ARCH_CONFIGS = {
+    "vae": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260412_155836",
+        "out_path": "experiments/results/classifiers/rf/random_forest_vae.csv",
+    },
+    "vae_multidecoder_prior": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009",
+        "out_path": "experiments/results/classifiers/rf/random_forest_vae_multidecoder_prior.csv",
+    },
+    "dann": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260412_160450",
+        "out_path": "experiments/results/classifiers/rf/random_forest_dann.csv",
+    },
+    "coral": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260412_160952",
+        "out_path": "experiments/results/classifiers/rf/random_forest_coral.csv",
+    },
+}
 
-if ARCHITECTURE == "vae":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260412_155836")
-    OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_vae.csv")
-elif ARCHITECTURE == "vae_multidecoder_prior":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
-    OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_vae_multidecoder_prior.csv")
-elif ARCHITECTURE == "dann":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260412_160450")
-    OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_dann.csv")
-elif ARCHITECTURE == "coral":
-    EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260412_160952")
-    OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_coral.csv")
+parser = argparse.ArgumentParser(description="MLP evaluation across architectures")
+parser.add_argument(
+    "--architecture", "-a",
+    type=str,
+    required=True,
+    choices=list(ARCH_CONFIGS.keys()),
+    help="Architecture to evaluate",
+)
+args = parser.parse_args()
+
+ARCHITECTURE = args.architecture
+EXPERIMENT_DIR = Path(ARCH_CONFIGS[ARCHITECTURE]["experiment_dir"])
+OUT_PATH = Path(ARCH_CONFIGS[ARCHITECTURE]["out_path"])
+
+print(f"Architecture: {ARCHITECTURE}")
+print(f"Experiment: {EXPERIMENT_DIR}")
+print(f"Output: {OUT_PATH}")
 
 
 # ============================================================
@@ -341,28 +364,34 @@ for train_name in domains_train.keys():
         X_te, y_te = test_sets[test_name]
         Z_te, _ = test_sets_latent[test_name]
 
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
         for space, model, grid in [
-            # ("original", grid_orig.best_estimator_, grid_orig),
+            ("original", grid_orig.best_estimator_, grid_orig),
             ("latent", grid_lat.best_estimator_, grid_lat)]:
-            
-            metrics = metrics_report(
-                X_te if space == "original" else Z_te,
-                y_te,
-                model,
-                f"{train_name}-{test_name}-{space}"
-            )
-            
-            results.append({
-                "train": train_name,
-                "test": test_name,
-                "space": space,
-                "balanced_accuracy": metrics["Balanced_Accuracy"],
-                "f1_macro": metrics["F1_Macro"],
-                "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"],
-                "roc_auc": metrics["ROC_AUC_Macro"],
-                "cm": metrics["Confusion Matrix"] 
-            })
+
+            X_eval = X_te if space == "original" else Z_te
+
+            for fold_i, (_, idx) in enumerate(skf.split(X_eval, y_te)):
+                metrics = metrics_report(
+                    X_eval[idx],
+                    y_te[idx],
+                    model,
+                    f"{train_name}-{test_name}-{space}-fold{fold_i}"
+                )
+
+                results.append({
+                    "train": train_name,
+                    "test": test_name,
+                    "space": space,
+                    "fold": fold_i,
+                    "balanced_accuracy": metrics["Balanced_Accuracy"],
+                    "f1_macro": metrics["F1_Macro"],
+                    "recall_macro": metrics["Recall_Macro"],
+                    "specificity_macro": metrics["Specificity_Macro"],
+                    "roc_auc": metrics["ROC_AUC_Macro"],
+                    "cm": metrics["Confusion Matrix"],
+                })
 
 
 # ============================================================

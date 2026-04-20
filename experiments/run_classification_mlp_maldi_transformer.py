@@ -27,28 +27,41 @@ import pickle
 import numpy as np
 import pandas as pd
 import torch
+import argparse
 
 from maldi_nn.models import MaldiTransformer
 
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 
 from src.config.loader import *
 from src.data.datasets import *
 from src.data.preprocessing import *
 from src.evaluation.metrics import *
-
 from src.evaluation.eval import make_loader
 
 from models.baselines.mlp import MLPClassifier_Extended
 
 
 # ============================================================
-# MALDITRANSFORMER CONFIGURATION
+# ARG PARSING
 # ============================================================
-CHECKPOINT_PATH = Path("assets/MaldiTransformerS.ckpt") # (S, M, L or XL)
-OUT_PATH = Path("experiments/results/classifiers/mlp/mlp_transformer_S.csv")
-N_PEAKS = 200 # El Transformer suele usar los 200 picos más intensos
+MODEL_SIZES = ["S", "M", "L", "XL"]
+
+parser = argparse.ArgumentParser(description="MaldiTransformer + MLP evaluation")
+parser.add_argument(
+    "--size", "-s",
+    type=str,
+    required=True,
+    choices=MODEL_SIZES,
+    help="MaldiTransformer size: S, M, L or XL",
+)
+args = parser.parse_args()
+
+SIZE = args.size
+CHECKPOINT_PATH = Path(f"assets/MaldiTransformer{SIZE}.ckpt")
+OUT_PATH = Path(f"experiments/results/classifiers/mlp/mlp_transformer_{SIZE}.csv")
+N_PEAKS = 200  
 EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
 
@@ -166,105 +179,47 @@ Z_MSUMG = get_transformer_latent(data_msumg, model, n_peaks=N_PEAKS)
 # ============================================================
 # PREPARE DATASETS
 # ============================================================
-domains_train = {
-    "A": (
-        data_final[splits["splits_per_domain"]["DRIAMS_A"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_A"]["train_idx"]],
-    ),
-    "B": (
-        data_final[splits["splits_per_domain"]["DRIAMS_B"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_B"]["train_idx"]],
-    ),
-    "C": (
-        data_final[splits["splits_per_domain"]["DRIAMS_C"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_C"]["train_idx"]],
-    ),
-    "MARISMA": (
-        data_final[splits["splits_per_domain"]["MARISMA"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["MARISMA"]["train_idx"]],
-    ),
-    "RKI": (
-        data_final[splits["splits_per_domain"]["RKI"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["RKI"]["train_idx"]],
-    )
+SPLIT_NAMES = {
+    "A": "DRIAMS_A",
+    "B": "DRIAMS_B",
+    "C": "DRIAMS_C",
+    "MARISMA": "MARISMA",
+    "RKI": "RKI",
 }
+ 
+domains_train = {}
+domains_val = {}
+test_sets = {}
+ 
+for k, sk in SPLIT_NAMES.items():
+    tr_idx = splits["splits_per_domain"][sk]["train_idx"]
+    va_idx = splits["splits_per_domain"][sk]["val_idx"]
+    te_idx = splits["splits_per_domain"][sk]["test_idx"]
+ 
+    domains_train[k] = (data_final[tr_idx], label_final[tr_idx])
+    domains_val[k] = (data_final[va_idx], label_final[va_idx])
+    test_sets[k] = (data_final[te_idx], label_final[te_idx])
+ 
+test_sets["D (OOD)"]= (dataD, labelD)
+test_sets["MSUMG (OOD)"] = (data_msumg, label_msumg)
 
-test_sets = {
-    "A": (
-        data_final[splits["splits_per_domain"]["DRIAMS_A"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_A"]["test_idx"]],
-    ),
-    "B": (
-        data_final[splits["splits_per_domain"]["DRIAMS_B"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_B"]["test_idx"]],
-    ),
-    "C": (
-        data_final[splits["splits_per_domain"]["DRIAMS_C"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_C"]["test_idx"]],
-    ),
-    "MARISMA": (
-        data_final[splits["splits_per_domain"]["MARISMA"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["MARISMA"]["test_idx"]],
-    ),
-    "RKI": (
-        data_final[splits["splits_per_domain"]["RKI"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["RKI"]["test_idx"]],
-    ),
-
-    # OOD
-    "D (OOD)": (dataD, labelD),
-    "MSUMG (OOD)": (data_msumg, label_msumg),
-}
-
-
-domains_train_latent = {
-    "A": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_A"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_A"]["train_idx"]],
-    ),
-    "B": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_B"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_B"]["train_idx"]],
-    ),
-    "C": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_C"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_C"]["train_idx"]],
-    ),
-    "MARISMA": (
-        Z_final[splits["splits_per_domain"]["MARISMA"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["MARISMA"]["train_idx"]],
-    ),
-    "RKI": (
-        Z_final[splits["splits_per_domain"]["RKI"]["train_idx"]],
-        label_final[splits["splits_per_domain"]["RKI"]["train_idx"]],
-    )
-}
-
-test_sets_latent = {
-    "A": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_A"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_A"]["test_idx"]],
-    ),
-    "B": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_B"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_B"]["test_idx"]],
-    ),
-    "C": (
-        Z_final[splits["splits_per_domain"]["DRIAMS_C"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["DRIAMS_C"]["test_idx"]],
-    ),
-    "MARISMA": (
-        Z_final[splits["splits_per_domain"]["MARISMA"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["MARISMA"]["test_idx"]],
-    ),
-    "RKI": (
-        Z_final[splits["splits_per_domain"]["RKI"]["test_idx"]],
-        label_final[splits["splits_per_domain"]["RKI"]["test_idx"]],
-    ),
-    "D (OOD)": (Z_D, labelD),
-    "MSUMG (OOD)": (Z_MSUMG, label_msumg),
-}
-
+# Latent
+domains_train_latent = {}
+domains_val_latent = {}
+test_sets_latent = {}
+ 
+for k, sk in SPLIT_NAMES.items():
+    tr_idx = splits["splits_per_domain"][sk]["train_idx"]
+    va_idx = splits["splits_per_domain"][sk]["val_idx"]
+    te_idx = splits["splits_per_domain"][sk]["test_idx"]
+ 
+    domains_train_latent[k] = (Z_final[tr_idx], label_final[tr_idx])
+    domains_val_latent[k] = (Z_final[va_idx], label_final[va_idx])
+    test_sets_latent[k] = (Z_final[te_idx], label_final[te_idx])
+ 
+test_sets_latent["D (OOD)"] = (Z_D, labelD)
+test_sets_latent["MSUMG (OOD)"] = (Z_MSUMG, label_msumg)
+ 
 
 # ============================================================
 # EVALUATION
@@ -277,24 +232,24 @@ for train_name in domains_train.keys():
     print("="*70)
 
     X_tr, y_tr = domains_train[train_name]
+    X_va, y_va = domains_val[train_name]
+ 
     Z_tr, _ = domains_train_latent[train_name]
+    Z_va, _ = domains_val_latent[train_name]
 
     # ============================
     # LABEL ENCODING
     # ============================
     le = LabelEncoder()
     y_tr_enc = le.fit_transform(y_tr)
-
+    y_va_enc = le.transform(y_va)
+ 
     n_classes = len(le.classes_)
 
     # ============================
     # TRAIN MLP ORIGINAL
     # ============================
     print("\n--- Training MLP (original) ---")
-    X_train, X_val, y_train, y_val = train_test_split(
-        X_tr, y_tr_enc, test_size=0.1, stratify=y_tr_enc, random_state=42
-    )
-
     mlp_orig = MLPClassifier_Extended(
         input_dim=X_tr.shape[1],
         n_species=n_classes,
@@ -302,21 +257,17 @@ for train_name in domains_train.keys():
         lr=1e-4,
         patience=10
     )
-
+ 
     mlp_orig.trainloop(
-        make_loader(X_train, y_train, shuffle=True),
-        make_loader(X_val, y_val),
+        make_loader(X_tr, y_tr_enc, shuffle=True),
+        make_loader(X_va, y_va_enc),
         device
     )
-
+ 
     # ============================
     # TRAIN MLP LATENT
     # ============================
     print("\n--- Training MLP (latent) ---")
-    Z_train, Z_val, y_train, y_val = train_test_split(
-        Z_tr, y_tr_enc, test_size=0.1, stratify=y_tr_enc, random_state=42
-    )
-
     mlp_lat = MLPClassifier_Extended(
         input_dim=Z_tr.shape[1],
         n_species=n_classes,
@@ -324,10 +275,10 @@ for train_name in domains_train.keys():
         lr=1e-3,
         patience=10
     )
-
+ 
     mlp_lat.trainloop(
-        make_loader(Z_train, y_train, shuffle=True),
-        make_loader(Z_val, y_val),
+        make_loader(Z_tr, y_tr_enc, shuffle=True),
+        make_loader(Z_va, y_va_enc),
         device
     )
 
@@ -343,31 +294,35 @@ for train_name in domains_train.keys():
         Z_te, _ = test_sets_latent[test_name]
         y_te_enc = le.transform(y_te)
 
-        test_loader_orig = make_loader(X_te, y_te_enc)
-        test_loader_lat  = make_loader(Z_te, y_te_enc)
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
 
-        for space, model, loader in [
-            # ("original", mlp_orig, test_loader_orig), 
-            ("latent", mlp_lat, test_loader_lat)]:
-            metrics = metrics_report_mlp(
-                loader,
-                model,
-                f"{train_name}-{test_name}-{space}",
-                device=device,
-                class_names=le.classes_
-            )
+        for space, model, X_eval in [
+            ("original", mlp_orig, X_te),
+            ("latent",   mlp_lat,  Z_te),
+        ]:
+            for fold_i, (_, idx) in enumerate(skf.split(X_eval, y_te_enc)):
+                fold_loader = make_loader(X_eval[idx], y_te_enc[idx])
 
-            results.append({
-                "train": train_name,
-                "test": test_name,
-                "space": space,
-                "balanced_accuracy": metrics["Balanced_Accuracy"],
-                "f1_macro": metrics["F1_Macro"],
-                "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"],
-                "roc_auc": metrics["ROC_AUC_Macro"],
-                "cm": metrics["Confusion Matrix"] 
-            })
+                metrics = metrics_report_mlp(
+                    fold_loader,
+                    model,
+                    f"{train_name}-{test_name}-{space}-fold{fold_i}",
+                    device=device,
+                    class_names=le.classes_
+                )
+
+                results.append({
+                    "train": train_name,
+                    "test": test_name,
+                    "space": space,
+                    "fold": fold_i,
+                    "balanced_accuracy": metrics["Balanced_Accuracy"],
+                    "f1_macro": metrics["F1_Macro"],
+                    "recall_macro": metrics["Recall_Macro"],
+                    "specificity_macro": metrics["Specificity_Macro"],
+                    "roc_auc": metrics["ROC_AUC_Macro"],
+                    "cm": metrics["Confusion Matrix"],
+                })
 
 
 # ============================================================

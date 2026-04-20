@@ -27,10 +27,11 @@ import pickle
 import numpy as np
 import pandas as pd
 import torch
+import argparse
 
 from maldi_nn.models import MaldiTransformer
 
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.ensemble import RandomForestClassifier
 
 # utils
@@ -41,11 +42,24 @@ from src.evaluation.metrics import *
 
 
 # ============================================================
-# MALDITRANSFORMER CONFIGURATION
+# ARG PARSING
 # ============================================================
-CHECKPOINT_PATH = Path("assets/MaldiTransformerS.ckpt") # (S, M, L or XL)
-OUT_PATH = Path("experiments/results/classifiers/rf/random_forest_transformer_S.csv")
-N_PEAKS = 200 # El Transformer suele usar los 200 picos más intensos
+MODEL_SIZES = ["S", "M", "L", "XL"]
+
+parser = argparse.ArgumentParser(description="MaldiTransformer + RF evaluation")
+parser.add_argument(
+    "--size", "-s",
+    type=str,
+    required=True,
+    choices=MODEL_SIZES,
+    help="MaldiTransformer size: S, M, L or XL",
+)
+args = parser.parse_args()
+
+SIZE = args.size
+CHECKPOINT_PATH = Path(f"assets/MaldiTransformer{SIZE}.ckpt")
+OUT_PATH = Path(f"experiments/results/classifiers/rf/random_forest_transformer_{SIZE}.csv")
+N_PEAKS = 200  
 EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
 
@@ -306,28 +320,35 @@ for train_name in domains_train.keys():
         X_te, y_te = test_sets[test_name]
         Z_te, _ = test_sets_latent[test_name]
 
+        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+
         for space, model, grid in [
-            # ("original", grid_orig.best_estimator_, grid_orig),
-            ("latent", grid_lat.best_estimator_, grid_lat)]:
-            metrics = metrics_report(
-                X_te if space == "original" else Z_te,
-                y_te,
-                model,
-                f"{train_name}-{test_name}-{space}"
-            )
-            
-            results.append({
-                "train": train_name,
-                "test": test_name,
-                "space": space,
-                "balanced_accuracy": metrics["Balanced_Accuracy"],
-                "f1_macro": metrics["F1_Macro"],
-                "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"],
-                "roc_auc": metrics["ROC_AUC_Macro"],
-                "cm": metrics["Confusion Matrix"] 
-            })
-            
+            ("original", grid_orig.best_estimator_, grid_orig),
+            ("latent", grid_lat.best_estimator_, grid_lat),
+        ]:
+            X_eval = X_te if space == "original" else Z_te
+
+            for fold_i, (_, idx) in enumerate(skf.split(X_eval, y_te)):
+                metrics = metrics_report(
+                    X_eval[idx],
+                    y_te[idx],
+                    model,
+                    f"{train_name}-{test_name}-{space}-fold{fold_i}"
+                )
+
+                results.append({
+                    "train": train_name,
+                    "test": test_name,
+                    "space": space,
+                    "fold": fold_i,
+                    "balanced_accuracy": metrics["Balanced_Accuracy"],
+                    "f1_macro": metrics["F1_Macro"],
+                    "recall_macro": metrics["Recall_Macro"],
+                    "specificity_macro": metrics["Specificity_Macro"],
+                    "roc_auc": metrics["ROC_AUC_Macro"],
+                    "cm": metrics["Confusion Matrix"],
+                })
+                
 
 # ============================================================
 # SAVE CSV
