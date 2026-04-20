@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split, StratifiedKFold
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 from src.config.loader import load_config
@@ -142,6 +142,8 @@ for n_prev in grid_prev:
         y_ft_enc = le.transform(y_ft)
         counts_ft = np.bincount(y_ft_enc)
 
+        test_loader_orig = make_loader(X_test, y_test_enc)
+
         ############################################################
         # TRAIN FEW-SHOT MODELS (once per grid cell)
         ############################################################
@@ -197,72 +199,61 @@ for n_prev in grid_prev:
         Z_test_zero = encode_latent(vae_pretrained, X_test, device)
         Z_test_full = encode_latent(vae_full, X_test, device)
         Z_test_freeze = encode_latent(vae_freeze, X_test, device)
+ 
+        test_loader_zero = make_loader(Z_test_zero, y_test_enc)
+        test_loader_full = make_loader(Z_test_full, y_test_enc)
+        test_loader_freeze = make_loader(Z_test_freeze, y_test_enc)
+ 
 
         ############################################################
-        # STRATIFIED KFOLD ON TEST
+        # EVALUATION 
         ############################################################
-        skf = StratifiedKFold(n_splits=K_FOLDS, shuffle=True, random_state=42)
-
-        for fold_i, (_, idx_f) in enumerate(skf.split(X_test, y_test_enc)):
-            X_te_f = X_test[idx_f]
-            y_te_f = y_test[idx_f]
-            y_te_f_enc = y_test_enc[idx_f]
-            Z_zero_f = Z_test_zero[idx_f]
-            Z_full_f = Z_test_full[idx_f]
-            Z_freeze_f = Z_test_freeze[idx_f]
-
-            loader_orig_f = make_loader(X_te_f,    y_te_f_enc)
-            loader_zero_f = make_loader(Z_zero_f,  y_te_f_enc)
-            loader_full_f = make_loader(Z_full_f,  y_te_f_enc)
-            loader_freeze_f = make_loader(Z_freeze_f,y_te_f_enc)
-
-            # Baseline RF/MLP in original space
-            metrics_orig = metrics_report(X_te_f, y_te_f, baseline_rf_original, "DRIAMS_D", np.unique(TARGET_SPECIES))
-            metrics_mlp_orig = metrics_report_mlp(loader_orig_f, baseline_mlp_original, "DRIAMS_D", device=device, class_names=le.classes_)
-
-            # Baseline latent (zero-shot)
-            metrics_lat = metrics_report(Z_zero_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
-            metrics_mlp_lat  = metrics_report_mlp(loader_zero_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
-
-            # Few-shot on target
-            metrics_few = metrics_report(X_te_f, y_te_f, rf_few, "DRIAMS_D", np.unique(TARGET_SPECIES))
-            metrics_mlp_few_orig = metrics_report_mlp(loader_orig_f, mlp_few_orig, "DRIAMS_D", device=device, class_names=le.classes_)
-
-            # Finetuning full
-            metrics_ft_full = metrics_report(Z_full_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
-            metrics_ft_full_mlp = metrics_report_mlp(loader_full_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
-
-            # Finetuning freeze_priors
-            metrics_ft_freeze = metrics_report(Z_freeze_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
-            metrics_ft_freeze_mlp = metrics_report_mlp(loader_freeze_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
-
-            ############################################################
-            # Store results
-            ############################################################
-            for model_name, metrics in [
-                ("RF_original",     metrics_orig),
-                ("MLP_original",    metrics_mlp_orig),
-                ("RF_latent_zero",  metrics_lat),
-                ("MLP_latent_zero", metrics_mlp_lat),
-                ("RF_few",          metrics_few),
-                ("MLP_few",         metrics_mlp_few_orig),
-                ("FT_full_RF",      metrics_ft_full),
-                ("FT_full_MLP",     metrics_ft_full_mlp),
-                ("FT_freeze_RF",    metrics_ft_freeze),
-                ("FT_freeze_MLP",   metrics_ft_freeze_mlp),
-            ]:
-                results.append({
-                    "n_prev": n_prev,
-                    "n_new": n_new,
-                    "model": model_name,
-                    "fold": fold_i,
-                    "balanced_accuracy": metrics["Balanced_Accuracy"],
-                    "f1_macro": metrics["F1_Macro"],
-                    "recall_macro": metrics["Recall_Macro"],
-                    "specificity_macro": metrics["Specificity_Macro"],
-                    "roc_auc_macro": metrics["ROC_AUC_Macro"],
-                    "confusion_matrix": json.dumps(metrics["Confusion Matrix"].tolist()),
-                })
+        # Baseline RF/MLP in original space
+        metrics_orig = metrics_report(X_test, y_test, baseline_rf_original, "DRIAMS_D", np.unique(TARGET_SPECIES))
+        metrics_mlp_orig = metrics_report_mlp(test_loader_orig, baseline_mlp_original, "DRIAMS_D", device=device, class_names=le.classes_)
+ 
+        # Baseline latent (zero-shot)
+        metrics_lat = metrics_report(Z_test_zero, y_test, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+        metrics_mlp_lat  = metrics_report_mlp(test_loader_zero, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+ 
+        # Few-shot on target
+        metrics_few = metrics_report(X_test, y_test, rf_few, "DRIAMS_D", np.unique(TARGET_SPECIES))
+        metrics_mlp_few_orig = metrics_report_mlp(test_loader_orig, mlp_few_orig, "DRIAMS_D", device=device, class_names=le.classes_)
+ 
+        # Finetuning full
+        metrics_ft_full = metrics_report(Z_test_full, y_test, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+        metrics_ft_full_mlp = metrics_report_mlp(test_loader_full, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+ 
+        # Finetuning freeze_priors
+        metrics_ft_freeze = metrics_report(Z_test_freeze, y_test, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+        metrics_ft_freeze_mlp = metrics_report_mlp(test_loader_freeze, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+ 
+        ############################################################
+        # Store results
+        ############################################################
+        for model_name, metrics in [
+            ("RF_original",     metrics_orig),
+            ("MLP_original",    metrics_mlp_orig),
+            ("RF_latent_zero",  metrics_lat),
+            ("MLP_latent_zero", metrics_mlp_lat),
+            ("RF_few",          metrics_few),
+            ("MLP_few",         metrics_mlp_few_orig),
+            ("FT_full_RF",      metrics_ft_full),
+            ("FT_full_MLP",     metrics_ft_full_mlp),
+            ("FT_freeze_RF",    metrics_ft_freeze),
+            ("FT_freeze_MLP",   metrics_ft_freeze_mlp),
+        ]:
+            results.append({
+                "n_prev": n_prev,
+                "n_new": n_new,
+                "model": model_name,
+                "balanced_accuracy": metrics["Balanced_Accuracy"],
+                "f1_macro": metrics["F1_Macro"],
+                "recall_macro": metrics["Recall_Macro"],
+                "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc_macro": metrics["ROC_AUC_Macro"],
+                "confusion_matrix": json.dumps(metrics["Confusion Matrix"].tolist()),
+            })
 
 
 ############################################################

@@ -29,7 +29,7 @@ import pandas as pd
 import torch
 import argparse
 
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 
 # utils
@@ -364,34 +364,30 @@ for train_name in domains_train.keys():
         X_te, y_te = test_sets[test_name]
         Z_te, _ = test_sets_latent[test_name]
 
-        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-        for space, model, grid in [
-            ("original", grid_orig.best_estimator_, grid_orig),
-            ("latent", grid_lat.best_estimator_, grid_lat)]:
+        for space, model in [
+            ("original", grid_orig.best_estimator_),
+            ("latent",   grid_lat.best_estimator_)]:
 
             X_eval = X_te if space == "original" else Z_te
 
-            for fold_i, (_, idx) in enumerate(skf.split(X_eval, y_te)):
-                metrics = metrics_report(
-                    X_eval[idx],
-                    y_te[idx],
-                    model,
-                    f"{train_name}-{test_name}-{space}-fold{fold_i}"
-                )
-
-                results.append({
-                    "train": train_name,
-                    "test": test_name,
-                    "space": space,
-                    "fold": fold_i,
-                    "balanced_accuracy": metrics["Balanced_Accuracy"],
-                    "f1_macro": metrics["F1_Macro"],
-                    "recall_macro": metrics["Recall_Macro"],
-                    "specificity_macro": metrics["Specificity_Macro"],
-                    "roc_auc": metrics["ROC_AUC_Macro"],
-                    "cm": metrics["Confusion Matrix"],
-                })
+            metrics = metrics_report(
+                X_eval,
+                y_te,
+                model,
+                f"{train_name}-{test_name}-{space}"
+            )
+ 
+            results.append({
+                "train": train_name,
+                "test": test_name,
+                "space": space,
+                "balanced_accuracy": metrics["Balanced_Accuracy"],
+                "f1_macro": metrics["F1_Macro"],
+                "recall_macro": metrics["Recall_Macro"],
+                "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"],
+            })
 
 
 # ============================================================

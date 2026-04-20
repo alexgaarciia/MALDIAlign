@@ -31,7 +31,6 @@ import argparse
 
 from maldi_nn.models import MaldiTransformer
 
-from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 
 from src.config.loader import *
@@ -294,35 +293,32 @@ for train_name in domains_train.keys():
         Z_te, _ = test_sets_latent[test_name]
         y_te_enc = le.transform(y_te)
 
-        skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-
-        for space, model, X_eval in [
-            ("original", mlp_orig, X_te),
-            ("latent",   mlp_lat,  Z_te),
+        test_loader_orig = make_loader(X_te, y_te_enc)
+        test_loader_lat  = make_loader(Z_te, y_te_enc)
+ 
+        for space, model, loader in [
+            ("original", mlp_orig, test_loader_orig),
+            ("latent",   mlp_lat,  test_loader_lat),
         ]:
-            for fold_i, (_, idx) in enumerate(skf.split(X_eval, y_te_enc)):
-                fold_loader = make_loader(X_eval[idx], y_te_enc[idx])
-
-                metrics = metrics_report_mlp(
-                    fold_loader,
-                    model,
-                    f"{train_name}-{test_name}-{space}-fold{fold_i}",
-                    device=device,
-                    class_names=le.classes_
-                )
-
-                results.append({
-                    "train": train_name,
-                    "test": test_name,
-                    "space": space,
-                    "fold": fold_i,
-                    "balanced_accuracy": metrics["Balanced_Accuracy"],
-                    "f1_macro": metrics["F1_Macro"],
-                    "recall_macro": metrics["Recall_Macro"],
-                    "specificity_macro": metrics["Specificity_Macro"],
-                    "roc_auc": metrics["ROC_AUC_Macro"],
-                    "cm": metrics["Confusion Matrix"],
-                })
+            metrics = metrics_report_mlp(
+                loader,
+                model,
+                f"{train_name}-{test_name}-{space}",
+                device=device,
+                class_names=le.classes_
+            )
+ 
+            results.append({
+                "train": train_name,
+                "test": test_name,
+                "space": space,
+                "balanced_accuracy": metrics["Balanced_Accuracy"],
+                "f1_macro": metrics["F1_Macro"],
+                "recall_macro": metrics["Recall_Macro"],
+                "specificity_macro": metrics["Specificity_Macro"],
+                "roc_auc": metrics["ROC_AUC_Macro"],
+                "cm": metrics["Confusion Matrix"],
+            })
 
 
 # ============================================================
