@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, StratifiedKFold
 from sklearn.preprocessing import LabelEncoder
 
 from src.config.loader import load_config
@@ -75,8 +75,8 @@ print("\n===== LOADING PRETRAINED MODELS =====")
 
 PATH_RF_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260409_113358/rf_original_ABC_MAR_RKI.joblib")
 PATH_RF_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_rf/20260409_113358/rf_latent_ABC_MAR_RKI.joblib")
-PRETRAINED_MLP_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260409_112714/mlp_original_ABC_MAR_RKI.pth")
-PRETRAINED_MLP_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260409_112714/mlp_latent_ABC_MAR_RKI.pth")
+PRETRAINED_MLP_ORIGINAL = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260420_090507/mlp_original_ABC_MAR_RKI.pth")
+PRETRAINED_MLP_LATENT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp/20260420_090507/mlp_latent_ABC_MAR_RKI.pth")
 PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/model.pth")
 OUTPUT_PATH = Path("/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/finetuning_6species")
 
@@ -114,11 +114,12 @@ grid_prev = np.arange(0, 251, 50)
 grid_new  = np.arange(50, 251, 50)
 
 results = []
-
 RUN_LATENT_EVALUATION = False
+K_FOLDS = 5
+
 
 ############################################################
-# GRID EVALUATION LOOP (DRIAMS-D ONLY)
+# GRID EVALUATION LOOP 
 ############################################################
 for n_prev in grid_prev:
     for n_new in grid_new:
@@ -130,213 +131,138 @@ for n_prev in grid_prev:
         split_file = SPLITS_PATH / f"prev_{n_prev}_new_{n_new}.pkl"
         splits = load_pkl(split_file)
         idx_test, idx_ft = splits["DRIAMS_D"]["test"], splits["DRIAMS_D"]["finetuning"]
-        
+
         ############################################################
-        # Build TEST and FINETUNING set (fixed evaluation set)
+        # Build TEST and FINETUNING sets
         ############################################################
         X_test, y_test = dataD[idx_test], labelD[idx_test]
         X_ft, y_ft = dataD[idx_ft], labelD[idx_ft]
 
         y_test_enc = le.transform(y_test)
         y_ft_enc = le.transform(y_ft)
-        counts = np.bincount(y_ft_enc)
-
-        test_loader_orig = make_loader(X_test, y_test_enc)
+        counts_ft = np.bincount(y_ft_enc)
 
         ############################################################
-        # A. BASELINE RF (ORIGINAL SPACE)
+        # TRAIN FEW-SHOT MODELS (once per grid cell)
         ############################################################
-        metrics_orig = metrics_report(
-            X_test, y_test,
-            baseline_rf_original,
-            "DRIAMS_D",
-            np.unique(TARGET_SPECIES)
-        )
-
-        metrics_mlp_orig = metrics_report_mlp(
-            test_loader_orig,
-            baseline_mlp_original,
-            "DRIAMS_D",
-            device=device,
-            class_names=le.classes_
-        )
-
-        ############################################################
-        # B. BASELINE RF (LATENT SPACE) ZERO-SHOT
-        ############################################################
-        Z_test_zero = encode_latent(vae_pretrained, X_test, device)
-        test_loader_lat = make_loader(Z_test_zero, y_test_enc)
-
-        metrics_lat = metrics_report(
-            Z_test_zero, y_test,
-            baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(TARGET_SPECIES)
-        )
-
-        metrics_mlp_lat = metrics_report_mlp(
-            test_loader_lat,
-            baseline_mlp_latent,
-            "DRIAMS_D",
-            device=device,
-            class_names=le.classes_
-        )
-
-        ############################################################
-        # C. RF AND MLP TRAINED ONLY ON FEW-SHOT TARGET DATA
-        ############################################################
-        # Random Forest
+        # RF few-shot
         rf_few = RandomForestClassifier(
-            n_estimators=200,
-            max_depth=20,
+            n_estimators=200, max_depth=20,
             class_weight="balanced_subsample",
-            n_jobs=-1,
-            random_state=42
+            n_jobs=-1, random_state=42
         )
-
         rf_few.fit(X_ft, y_ft)
 
-        metrics_few = metrics_report(
-            X_test, y_test,
-            rf_few,
-            "DRIAMS_D",
-            np.unique(TARGET_SPECIES)
-        )
-
-        # MLP
+        # MLP few-shot
         X_ft_tr, X_ft_val, y_ft_tr, y_ft_val = train_test_split(
             X_ft, y_ft_enc,
             test_size=0.2,
-            stratify=y_ft_enc if np.all(counts >= 2) else None,
+            stratify=y_ft_enc if np.all(counts_ft >= 2) else None,
             random_state=42
         )
-
         mlp_few_orig = MLPClassifier_Extended(
-            input_dim=X_ft.shape[1],
-            n_species=len(le.classes_),
-            epochs=50,
-            lr=1e-4,
-            patience=10
+            input_dim=X_ft.shape[1], n_species=len(le.classes_),
+            epochs=50, lr=1e-4, patience=10
         )
-
         mlp_few_orig.trainloop(
             make_loader(X_ft_tr, y_ft_tr, shuffle=True),
             make_loader(X_ft_val, y_ft_val),
             device
         )
 
-        metrics_mlp_few_orig = metrics_report_mlp(
-            test_loader_orig,
-            mlp_few_orig,
-            "DRIAMS_D",
-            device=device,
-            class_names=le.classes_
-        )
-
         ############################################################
-        # D. FINETUNING (FULL)
+        # FINETUNING VAEs 
         ############################################################
-        vae_full, species_encoder_full, DOMAIN_MAP_full = run_finetuning(
-            splits_path=split_file,
-            target_domain="DRIAMS_D",
+        vae_full, _, _ = run_finetuning(
+            splits_path=split_file, target_domain="DRIAMS_D",
             pretrained_model_path=PRETRAINED_MODEL_PATH,
-            finetuning_mode="full",
-            n_prev=n_prev,
-            n_new=n_new,
-            output_dir=OUTPUT_PATH,
-            device=device,
+            finetuning_mode="full", n_prev=n_prev, n_new=n_new,
+            output_dir=OUTPUT_PATH, device=device,
             consider_prev_domains=(n_prev > 0),
-            run_latent_evaluation=RUN_LATENT_EVALUATION
+            run_latent_evaluation=RUN_LATENT_EVALUATION,
         )
 
-        # Encode test set with finetuned model
+        vae_freeze, _, _ = run_finetuning(
+            splits_path=split_file, target_domain="DRIAMS_D",
+            pretrained_model_path=PRETRAINED_MODEL_PATH,
+            finetuning_mode="freeze_priors", n_prev=n_prev, n_new=n_new,
+            output_dir=OUTPUT_PATH, device=device,
+            consider_prev_domains=(n_prev > 0),
+            run_latent_evaluation=RUN_LATENT_EVALUATION,
+        )
+
+        ############################################################
+        # Encode test set once per model
+        ############################################################
+        Z_test_zero = encode_latent(vae_pretrained, X_test, device)
         Z_test_full = encode_latent(vae_full, X_test, device)
-        test_loader_full = make_loader(Z_test_full, y_test_enc)
-
-        # Evaluate with pretrained latent RF and MLP (NO retraining)
-        metrics_ft_full = metrics_report(
-            Z_test_full,
-            y_test,
-            baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(TARGET_SPECIES)
-        )
-
-        metrics_ft_full_mlp = metrics_report_mlp(
-            test_loader_full,
-            baseline_mlp_latent,
-            "DRIAMS_D",
-            device=device,
-            class_names=le.classes_
-        )
-
-        ############################################################
-        # E. FINETUNING (FREEZE PRIORS)
-        ############################################################
-        vae_freeze, species_encoder_freeze, DOMAIN_MAP_freeze = run_finetuning(
-            splits_path=split_file,
-            target_domain="DRIAMS_D",
-            pretrained_model_path=PRETRAINED_MODEL_PATH,
-            finetuning_mode="freeze_priors",
-            n_prev=n_prev,
-            n_new=n_new,
-            output_dir=OUTPUT_PATH,
-            device=device,
-            consider_prev_domains=(n_prev > 0),
-            run_latent_evaluation=RUN_LATENT_EVALUATION
-        )
-
-        # Encode test set with freeze-priors model
         Z_test_freeze = encode_latent(vae_freeze, X_test, device)
-        test_loader_freeze = make_loader(Z_test_freeze, y_test_enc)
-
-        # Evaluate using pretrained latent RF and MLP
-        metrics_ft_freeze = metrics_report(
-            Z_test_freeze,
-            y_test,
-            baseline_rf_latent,
-            "DRIAMS_D",
-            np.unique(TARGET_SPECIES)
-        )
-
-        metrics_ft_freeze_mlp = metrics_report_mlp(
-            test_loader_freeze,
-            baseline_mlp_latent,
-            "DRIAMS_D",
-            device=device,
-            class_names=le.classes_
-        )
 
         ############################################################
-        # Store results
+        # STRATIFIED KFOLD ON TEST
         ############################################################
-        for model_name, metrics in [
-            ("RF_original", metrics_orig),
-            ("MLP_original", metrics_mlp_orig),
-            
-            ("RF_latent_zero", metrics_lat),
-            ("MLP_latent_zero", metrics_mlp_lat),
+        skf = StratifiedKFold(n_splits=K_FOLDS, shuffle=True, random_state=42)
 
-            ("RF_few", metrics_few),
-            ("MLP_few", metrics_mlp_few_orig),
+        for fold_i, (_, idx_f) in enumerate(skf.split(X_test, y_test_enc)):
+            X_te_f = X_test[idx_f]
+            y_te_f = y_test[idx_f]
+            y_te_f_enc = y_test_enc[idx_f]
+            Z_zero_f = Z_test_zero[idx_f]
+            Z_full_f = Z_test_full[idx_f]
+            Z_freeze_f = Z_test_freeze[idx_f]
 
-            ("FT_full_RF", metrics_ft_full),
-            ("FT_full_MLP", metrics_ft_full_mlp),
+            loader_orig_f = make_loader(X_te_f,    y_te_f_enc)
+            loader_zero_f = make_loader(Z_zero_f,  y_te_f_enc)
+            loader_full_f = make_loader(Z_full_f,  y_te_f_enc)
+            loader_freeze_f = make_loader(Z_freeze_f,y_te_f_enc)
 
-            ("FT_freeze_RF", metrics_ft_freeze),
-            ("FT_freeze_MLP", metrics_ft_freeze_mlp)]:
+            # Baseline RF/MLP in original space
+            metrics_orig = metrics_report(X_te_f, y_te_f, baseline_rf_original, "DRIAMS_D", np.unique(TARGET_SPECIES))
+            metrics_mlp_orig = metrics_report_mlp(loader_orig_f, baseline_mlp_original, "DRIAMS_D", device=device, class_names=le.classes_)
 
-            results.append({
-                "n_prev": n_prev,
-                "n_new": n_new,
-                "model": model_name,
-                "balanced_accuracy": metrics["Balanced_Accuracy"],
-                "f1_macro": metrics["F1_Macro"],
-                "recall_macro": metrics["Recall_Macro"],
-                "specificity_macro": metrics["Specificity_Macro"],
-                "roc_auc_macro": metrics["ROC_AUC_Macro"],
-                "confusion_matrix": json.dumps(metrics["Confusion Matrix"].tolist())
-            })
+            # Baseline latent (zero-shot)
+            metrics_lat = metrics_report(Z_zero_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+            metrics_mlp_lat  = metrics_report_mlp(loader_zero_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+
+            # Few-shot on target
+            metrics_few = metrics_report(X_te_f, y_te_f, rf_few, "DRIAMS_D", np.unique(TARGET_SPECIES))
+            metrics_mlp_few_orig = metrics_report_mlp(loader_orig_f, mlp_few_orig, "DRIAMS_D", device=device, class_names=le.classes_)
+
+            # Finetuning full
+            metrics_ft_full = metrics_report(Z_full_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+            metrics_ft_full_mlp = metrics_report_mlp(loader_full_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+
+            # Finetuning freeze_priors
+            metrics_ft_freeze = metrics_report(Z_freeze_f, y_te_f, baseline_rf_latent, "DRIAMS_D", np.unique(TARGET_SPECIES))
+            metrics_ft_freeze_mlp = metrics_report_mlp(loader_freeze_f, baseline_mlp_latent, "DRIAMS_D", device=device, class_names=le.classes_)
+
+            ############################################################
+            # Store results
+            ############################################################
+            for model_name, metrics in [
+                ("RF_original",     metrics_orig),
+                ("MLP_original",    metrics_mlp_orig),
+                ("RF_latent_zero",  metrics_lat),
+                ("MLP_latent_zero", metrics_mlp_lat),
+                ("RF_few",          metrics_few),
+                ("MLP_few",         metrics_mlp_few_orig),
+                ("FT_full_RF",      metrics_ft_full),
+                ("FT_full_MLP",     metrics_ft_full_mlp),
+                ("FT_freeze_RF",    metrics_ft_freeze),
+                ("FT_freeze_MLP",   metrics_ft_freeze_mlp),
+            ]:
+                results.append({
+                    "n_prev": n_prev,
+                    "n_new": n_new,
+                    "model": model_name,
+                    "fold": fold_i,
+                    "balanced_accuracy": metrics["Balanced_Accuracy"],
+                    "f1_macro": metrics["F1_Macro"],
+                    "recall_macro": metrics["Recall_Macro"],
+                    "specificity_macro": metrics["Specificity_Macro"],
+                    "roc_auc_macro": metrics["ROC_AUC_Macro"],
+                    "confusion_matrix": json.dumps(metrics["Confusion Matrix"].tolist()),
+                })
 
 
 ############################################################
@@ -346,10 +272,8 @@ df_results = pd.DataFrame(results)
 
 stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 csv_path = OUTPUT_PATH / f"grid_results_{stamp}.csv"
-
 df_results.to_csv(csv_path, index=False)
 
 print("\n===== GRID RESULTS SAVED =====")
 print(f"Saved to: {csv_path}")
-
 print("\n===== GRID EVALUATION FINISHED =====")
