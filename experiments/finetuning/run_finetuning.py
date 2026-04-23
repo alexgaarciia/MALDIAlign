@@ -17,6 +17,11 @@ from src.evaluation.eval import eval_model, run_tsne_evaluation
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 
 
+TARGET_SPECIES = [
+    "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
+    "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"
+]   
+
 def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning_mode, n_prev, n_new, output_dir, device, consider_prev_domains=True, run_latent_evaluation=True):
     """
     Executes finetuning of a pretrained MultiVAE model
@@ -75,11 +80,6 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     ####################
     print("\n===== LOADING DATA =====")
     cfg = load_config()
-
-    TARGET_SPECIES = [
-    "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
-    "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"
-    ]   
 
     driams_pkl = cfg["data"]["DRIAMS_FULL"]
     driams_A = load_driams(driams_pkl, filter=["DRIAMS_A"])["DRIAMS_A"]
