@@ -15,7 +15,7 @@ class ConditionalVAE_Bernoulli(nn.Module):
     The decoder is assumed to model p(x | z, c) as a Bernoulli distribution.
     """
 
-    def __init__(self, input_dim, latent_dim, cond_dim):
+    def __init__(self, input_dim, latent_dim, num_domains, emb_dim=8):
         """
         Parameters
         ----------
@@ -23,14 +23,14 @@ class ConditionalVAE_Bernoulli(nn.Module):
             Dimensionality of the input data x.
         latent_dim : int
             Dimensionality of the latent space z.
-        cond_dim : int
+        num_domains : int
             Dimensionality of the conditioning variable c
             (e.g., number of domains for one-hot encoding).
         """
         super().__init__()
-        self.cond_dim = cond_dim
-        self.encoder = ConditionalEncoder(input_dim, latent_dim, cond_dim)
-        self.decoder = ConditionalDecoder(latent_dim, input_dim, cond_dim)
+        self.domain_emb = nn.Embedding(num_domains, emb_dim)
+        self.encoder = ConditionalEncoder(input_dim, latent_dim, emb_dim)
+        self.decoder = ConditionalDecoder(latent_dim, input_dim, emb_dim)
 
     def reparameterize(self, mu, logvar):
         """
@@ -52,7 +52,7 @@ class ConditionalVAE_Bernoulli(nn.Module):
         eps = torch.randn_like(std)
         return mu + eps * std
 
-    def forward(self, x, c):
+    def forward(self, x, domain_id):
         """
         Forward pass through the CVAE.
 
@@ -72,9 +72,10 @@ class ConditionalVAE_Bernoulli(nn.Module):
         z : torch.Tensor
             Sampled latent representation.
         """
+        c = self.domain_emb(domain_id)
         mu, logvar = self.encoder(x, c)
         z = self.reparameterize(mu, logvar)
-        return mu, logvar, z
+        return mu, logvar, z, c
 
     def elbo_loss(self, x, mu, logvar, z, c, beta=1.0):
         """
@@ -115,25 +116,7 @@ class ConditionalVAE_Bernoulli(nn.Module):
 
 
 class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
-    """
-    Extension of ConditionalVAE_Bernoulli including:
-    - Optimizer definition
-    - Training and validation loops
-    - KL annealing
-    - Early stopping
-    - Loss tracking during training
-    """
-
-    def __init__(
-        self,
-        input_dim,
-        latent_dim,
-        cond_dim,
-        lr=1e-4,
-        epochs=100,
-        patience=20,
-        annealing_epochs=50,
-    ):
+    def __init__(self, input_dim, latent_dim, num_domains, lr=1e-4, epochs=100, patience=20, annealing_epochs=50 ):
         """
         Parameters
         ----------
@@ -141,7 +124,7 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
             Dimensionality of the input data.
         latent_dim : int
             Dimensionality of the latent space.
-        cond_dim : int
+        num_domains : int
             Dimensionality of the conditioning variable.
         lr : float, optional
             Learning rate for the optimizer (default: 1e-4).
@@ -152,7 +135,7 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
         annealing_epochs : int, optional
             Number of epochs over which beta is linearly annealed to 1.
         """
-        super().__init__(input_dim, latent_dim, cond_dim)
+        super().__init__(input_dim, latent_dim, num_domains)
 
         self.lr = lr
         self.epochs = epochs
@@ -187,7 +170,7 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
         best_state = None
 
         for epoch in range(self.epochs):
-            beta = min(1.0, (epoch + 1) / self.annealing_epochs)
+            beta = 1
 
             # =======================
             #        TRAIN
@@ -196,25 +179,17 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
             total_loss, total_recon, total_kl = 0.0, 0.0, 0.0
 
             for batch in trainloader:
-                # batch can be (x, domain) or (x, domain, species)
                 if len(batch) == 3:
                     x, domain_id, _ = batch
                 else:
                     x, domain_id = batch
 
-                x = x.to(device)
-                domain_id = domain_id.to(device)
-
-                c_domain = nn.functional.one_hot(
-                    domain_id, num_classes=self.cond_dim
-                ).float().to(device)
+                x, domain_id = x.to(device), domain_id.to(device)
 
                 self.optimizer.zero_grad()
 
-                mu, logvar, z = self.forward(x, c_domain)
-                loss, recon, kl = self.elbo_loss(
-                    x, mu, logvar, z, c_domain, beta
-                )
+                mu, logvar, z, c = self.forward(x, domain_id)
+                loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
 
                 loss.backward()
                 self.optimizer.step()
@@ -243,14 +218,8 @@ class ConditionalVAE_Bernoulli_Extended(ConditionalVAE_Bernoulli):
                     x = x.to(device)
                     domain_id = domain_id.to(device)
 
-                    c_domain = nn.functional.one_hot(
-                        domain_id, num_classes=self.cond_dim
-                    ).float().to(device)
-
-                    mu, logvar, z = self.forward(x, c_domain)
-                    loss, recon, kl = self.elbo_loss(
-                        x, mu, logvar, z, c_domain, beta
-                    )
+                    mu, logvar, z, c = self.forward(x, domain_id)
+                    loss, recon, kl = self.elbo_loss(x, mu, logvar, z, c, beta)
 
                     val_loss += loss.item()
                     val_recon += recon.item()

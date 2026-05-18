@@ -76,7 +76,8 @@ class MultiVAE_Bernoulli_SpeciesPrior_Extended(MultiVAE_Bernoulli_SpeciesPrior):
             self.train()
             tr_loss, tr_recon, tr_kl = 0, 0, 0
 
-            for x, domain_id, species_id in trainloader:
+            for batch in trainloader:
+                x, domain_id, species_id = batch[0], batch[1], batch[2]                
                 x = x.to(device)
                 domain_id = domain_id.to(device)
                 species_id = species_id.to(device)
@@ -109,7 +110,8 @@ class MultiVAE_Bernoulli_SpeciesPrior_Extended(MultiVAE_Bernoulli_SpeciesPrior):
             val_loss, val_recon, val_kl = 0, 0, 0
 
             with torch.no_grad():
-                for x, domain_id, species_id in validloader:
+                for batch in validloader:
+                    x, domain_id, species_id = batch[0], batch[1], batch[2]                
                     x = x.to(device)
                     domain_id = domain_id.to(device)
                     species_id = species_id.to(device)
