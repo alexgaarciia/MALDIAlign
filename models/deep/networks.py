@@ -172,11 +172,13 @@ class BernoulliDecoder(nn.Module):
 
         self.net = nn.ModuleList([
             nn.Sequential(
-                nn.Linear(latent_dim, 256),
+                nn.Linear(latent_dim, 512),
                 nn.ReLU(),
-                nn.Linear(256, 1024),
+                nn.Linear(512, 1024),
                 nn.ReLU(),
-                nn.Linear(1024, output_dim),
+                nn.Linear(1024, 2048),
+                nn.ReLU(),
+                nn.Linear(2048, output_dim),
                 nn.Sigmoid()
             )
             for _ in range(num_domains)
@@ -339,9 +341,9 @@ class EncoderDANN(nn.Module):
         self.net = nn.Sequential(
             nn.Linear(input_dim, 1024),
             nn.ReLU(),
-            nn.Linear(1024, 256),
+            nn.Linear(1024, 1024),
             nn.ReLU(),
-            nn.Linear(256, latent_dim)
+            nn.Linear(1024, latent_dim)
         )
 
     def forward(self, x: torch.Tensor):
@@ -355,23 +357,30 @@ class SpeciesClassifier(nn.Module):
 
     def __init__(self, latent_dim: int, n_species: int):
         super().__init__()
-        self.classifier = nn.Linear(latent_dim, n_species)
+        self.net = nn.Sequential(
+            nn.Linear(latent_dim, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, n_species)
+        )
 
     def forward(self, z: torch.Tensor):
-        return self.classifier(z)
+        return self.net(z)
 
 
 class DomainClassifier(nn.Module):
     """
     Domain discriminator used in DANN.
     """
-
-    def __init__(self, latent_dim, hidden_dim=256, n_domains=2):
+    def __init__(self, latent_dim, n_domains=2):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
+            nn.Linear(latent_dim, 1024),
             nn.ReLU(),
-            nn.Linear(hidden_dim, n_domains)
+            nn.Linear(1024, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, n_domains)
         )
 
     def forward(self, z: torch.Tensor):
