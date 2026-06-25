@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 import torch
 import argparse
+from datetime import datetime
 
 from sklearn.preprocessing import LabelEncoder
 
@@ -37,27 +38,38 @@ from src.evaluation.metrics import metrics_report_mlp
 from src.evaluation.eval import load_model, encode_latent, make_loader
 
 from models.baselines.mlp import MLPClassifier_Extended
+from models.baselines.mlp_latent import LinearProbe_Extended
 
 
 # ============================================================
 # ARCHITECTURE TO TEST
 # ============================================================
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
 ARCH_CONFIGS = {
     "vae": {
-        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260412_155836",
-        "out_path": "experiments/results/classifiers/mlp/mlp_vae.csv",
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260614_235638",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_vae.csv",
+    },
+    "vae_prior": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260614_235109",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_vae_prior.csv",
+    },
+    "vae_multidecoder": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260614_235237",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_vae_multidecoder.csv",
     },
     "vae_multidecoder_prior": {
         "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009",
-        "out_path": "experiments/results/classifiers/mlp/mlp_vae_multidecoder_prior.csv",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_vae_multidecoder_prior.csv",
     },
     "dann": {
         "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/dann/20260412_160450",
-        "out_path": "experiments/results/classifiers/mlp/mlp_dann.csv",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_dann.csv",
     },
     "coral": {
         "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_coral/20260412_160952",
-        "out_path": "experiments/results/classifiers/mlp/mlp_coral.csv",
+        "out_path": f"experiments/results/classifiers/mlp/{timestamp}/mlp_coral.csv",
     },
 }
 
@@ -214,6 +226,37 @@ elif ARCHITECTURE == "vae":
     Z_D = encode_latent(vae, dataD, device)
     Z_MSUMG = encode_latent(vae, data_msumg, device)
 
+elif ARCHITECTURE == "vae_prior":
+    vae = load_model(
+        VAE_Bernoulli_Extended(
+            input_dim=data_final.shape[1],
+            latent_dim=64,
+            use_species_prior=True,
+            n_species=len(np.unique(label_final)),
+            num_domains=1,
+        ),
+        EXPERIMENT_DIR / "model.pth"
+    )
+
+    Z_final = encode_latent(vae, data_final, device)
+    Z_D = encode_latent(vae, dataD, device)
+    Z_MSUMG = encode_latent(vae, data_msumg, device)
+
+elif ARCHITECTURE == "vae_multidecoder":
+    vae = load_model(
+        VAE_Bernoulli_Extended(
+            input_dim=data_final.shape[1],
+            latent_dim=64,
+            use_species_prior=False,
+            num_domains=5,
+        ),
+        EXPERIMENT_DIR / "model.pth"
+    )
+
+    Z_final = encode_latent(vae, data_final, device)
+    Z_D = encode_latent(vae, dataD, device)
+    Z_MSUMG = encode_latent(vae, data_msumg, device)
+
 elif ARCHITECTURE == "dann":
     vae = load_model(DANNFull_Extended(
         input_dim=data_final.shape[1],
@@ -294,7 +337,7 @@ for train_name in domains_train.keys():
         input_dim=X_tr.shape[1],
         n_species=n_classes,
         epochs=50,
-        lr=1e-4,
+        lr=1e-3,
         patience=10
     )
  
@@ -308,8 +351,8 @@ for train_name in domains_train.keys():
     # TRAIN MLP LATENT
     # ============================
     print("\n--- Training MLP (latent) ---")
-    mlp_lat = MLPClassifier_Extended(
-        input_dim=Z_tr.shape[1],
+    mlp_lat = LinearProbe_Extended(
+        latent_dim=Z_tr.shape[1],
         n_species=n_classes,
         epochs=50,
         lr=1e-3,
@@ -361,6 +404,107 @@ for train_name in domains_train.keys():
                 "cm": metrics["Confusion Matrix"],
             })
     
+
+# ============================================================
+# Train con todos los source domains
+# ============================================================
+print("\n" + "="*70)
+print("TRAIN DOMAIN: ALL (A+B+C+MARISMA+RKI pooled)")
+print("="*70)
+
+# recoger todos los índices de train y val de todos los dominios
+all_tr_idx = np.concatenate([
+    splits["splits_per_domain"][sk]["train_idx"]
+    for sk in SPLIT_NAMES.values()
+    if sk in splits["splits_per_domain"]
+])
+all_va_idx = np.concatenate([
+    splits["splits_per_domain"][sk]["val_idx"]
+    for sk in SPLIT_NAMES.values()
+    if sk in splits["splits_per_domain"]
+])
+
+X_tr_pool = data_final[all_tr_idx]
+y_tr_pool = label_final[all_tr_idx]
+X_va_pool = data_final[all_va_idx]
+y_va_pool = label_final[all_va_idx]
+
+Z_tr_pool = Z_final[all_tr_idx]
+Z_va_pool = Z_final[all_va_idx]
+
+le_pool = LabelEncoder()
+y_tr_pool_enc = le_pool.fit_transform(y_tr_pool)
+y_va_pool_enc = le_pool.transform(y_va_pool)
+n_classes_pool = len(le_pool.classes_)
+
+print(f"Pooled train: {len(X_tr_pool)} | Pooled val: {len(X_va_pool)}")
+
+# MLP original space
+print("\n--- Training MLP (original) ---")
+mlp_orig_pool = MLPClassifier_Extended(
+    input_dim=X_tr_pool.shape[1],
+    n_species=n_classes_pool,
+    epochs=50,
+    lr=1e-3,
+    patience=10,
+)
+mlp_orig_pool.trainloop(
+    make_loader(X_tr_pool, y_tr_pool_enc, shuffle=True),
+    make_loader(X_va_pool, y_va_pool_enc),
+    device,
+)
+
+# MLP latent space
+print("\n--- Training MLP (latent) ---")
+mlp_lat_pool = LinearProbe_Extended(
+    latent_dim=Z_tr_pool.shape[1],
+    n_species=n_classes_pool,
+    epochs=50,
+    lr=1e-3,
+    patience=10,
+)
+mlp_lat_pool.trainloop(
+    make_loader(Z_tr_pool, y_tr_pool_enc, shuffle=True),
+    make_loader(Z_va_pool, y_va_pool_enc),
+    device,
+)
+
+# evaluar en todos los test sets
+for test_name in test_sets.keys():
+    print("\n" + "="*70)
+    print(f"TEST DOMAIN: {test_name}")
+    print("="*70)
+
+    X_te, y_te = test_sets[test_name]
+    Z_te, _    = test_sets_latent[test_name]
+    y_te_enc   = le_pool.transform(y_te)
+
+    test_loader_orig = make_loader(X_te, y_te_enc)
+    test_loader_lat  = make_loader(Z_te, y_te_enc)
+
+    for space, model, loader in [
+        ("original", mlp_orig_pool, test_loader_orig),
+        ("latent",   mlp_lat_pool,  test_loader_lat),
+    ]:
+        metrics = metrics_report_mlp(
+            loader,
+            model,
+            f"ALL-{test_name}-{space}",
+            device=device,
+            class_names=le_pool.classes_,
+        )
+
+        results.append({
+            "train": "ALL",
+            "test":  test_name,
+            "space": space,
+            "balanced_accuracy": metrics["Balanced_Accuracy"],
+            "f1_macro":          metrics["F1_Macro"],
+            "recall_macro":      metrics["Recall_Macro"],
+            "specificity_macro": metrics["Specificity_Macro"],
+            "roc_auc":           metrics["ROC_AUC_Macro"],
+            "cm":                metrics["Confusion Matrix"],
+        })
 
 # ============================================================
 # SAVE CSV

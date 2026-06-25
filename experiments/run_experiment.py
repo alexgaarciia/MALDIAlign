@@ -4,6 +4,7 @@
 from pathlib import Path
 import os
 import sys
+import json
 
 PROJECT_NAME = "MALDIAlign"
 
@@ -67,7 +68,7 @@ from src.training.data_pipeline import prepare_data
 from models.build_model import build_model
 from src.training.training import train_model
 from src.visualization.viz import plot_model_metrics
-from src.evaluation.eval import eval_model, run_tsne_evaluation
+from src.evaluation.eval import eval_model, run_tsne_evaluation, evaluate_amr_head
 from src.evaluation.prior_sampling import sample_all_species_priors
 
 
@@ -101,6 +102,8 @@ def main():
         test_size=data_cfg.get("test_size", 0.2),
         batch_size=data_cfg.get("batch_size", 64),
         use_species_weight=data_cfg.get("use_species_weights", False),
+        use_year_domains=data_cfg.get("use_year_domains", False),
+        ood_holdout=data_cfg.get("ood_holdout", None),
     )
  
     data_final = data["data_final"]
@@ -117,7 +120,8 @@ def main():
     
     # Build model
     print("\n===== Instantiating model =====")
-    model = build_model(cfg, data["input_dim"], antibiotic_names=antibiotics_list)
+    model = build_model(cfg, data["input_dim"], antibiotic_names=antibiotics_list,
+                        num_domains=data.get("num_domains"))
 
     # Train
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -129,6 +133,25 @@ def main():
     print("Model saved to:", experiment_dir / "model.pth")
     plot_model_metrics(trained_model, cfg["training"]["metrics_plot_title"], save=True, path=experiment_dir / "vae_loss")
     print("Training metrics saved")
+
+    # AMR test evaluation
+    if antibiotics_list is not None:
+        print("\n===== AMR evaluation on test set =====")
+        amr_results = evaluate_amr_head(
+            trained_model,
+            data["test_data_norm"],
+            data["amr_test"],
+            antibiotics_list,
+            device,
+        )
+        print(f"\n{'Antibiotic':<30} {'AUC':>8} {'PR-AUC':>8} {'N':>6}")
+        print("-" * 56)
+        for atb, metrics in amr_results.items():
+            print(f"{atb:<30} {metrics['auc']:>8.4f} {metrics['pr_auc']:>8.4f} {metrics['n']:>6}")
+
+        with open(experiment_dir / "amr_test_results.json", "w") as f:
+            json.dump(amr_results, f, indent=2)
+        print(f"\nAMR test results saved to {experiment_dir / 'amr_test_results.json'}")
 
     # t-SNE evaluation
     if cfg["evaluation"]["compute_tsne"]:

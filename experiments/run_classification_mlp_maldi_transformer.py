@@ -28,6 +28,7 @@ import numpy as np
 import pandas as pd
 import torch
 import argparse
+from datetime import datetime
 
 from maldi_nn.models import MaldiTransformer
 
@@ -39,7 +40,7 @@ from src.data.preprocessing import *
 from src.evaluation.metrics import *
 from src.evaluation.eval import make_loader
 
-from models.baselines.mlp import MLPClassifier_Extended
+from models.baselines.mlp_latent import LinearProbe_Extended
 
 
 # ============================================================
@@ -59,7 +60,8 @@ args = parser.parse_args()
 
 SIZE = args.size
 CHECKPOINT_PATH = Path(f"assets/MaldiTransformer{SIZE}.ckpt")
-OUT_PATH = Path(f"experiments/results/classifiers/mlp/mlp_transformer_{SIZE}.csv")
+timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUT_PATH = Path(f"experiments/results/classifiers/mlp/{timestamp}/mlp_transformer_{SIZE}.csv")
 N_PEAKS = 200  
 EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
 
@@ -246,29 +248,11 @@ for train_name in domains_train.keys():
     n_classes = len(le.classes_)
 
     # ============================
-    # TRAIN MLP ORIGINAL
-    # ============================
-    print("\n--- Training MLP (original) ---")
-    mlp_orig = MLPClassifier_Extended(
-        input_dim=X_tr.shape[1],
-        n_species=n_classes,
-        epochs=50,
-        lr=1e-4,
-        patience=10
-    )
- 
-    mlp_orig.trainloop(
-        make_loader(X_tr, y_tr_enc, shuffle=True),
-        make_loader(X_va, y_va_enc),
-        device
-    )
- 
-    # ============================
     # TRAIN MLP LATENT
     # ============================
     print("\n--- Training MLP (latent) ---")
-    mlp_lat = MLPClassifier_Extended(
-        input_dim=Z_tr.shape[1],
+    mlp_lat = LinearProbe_Extended(
+        latent_dim=Z_tr.shape[1],
         n_species=n_classes,
         epochs=50,
         lr=1e-3,
@@ -296,14 +280,11 @@ for train_name in domains_train.keys():
         test_loader_orig = make_loader(X_te, y_te_enc)
         test_loader_lat  = make_loader(Z_te, y_te_enc)
  
-        for space, model, loader in [
-            ("original", mlp_orig, test_loader_orig),
-            ("latent",   mlp_lat,  test_loader_lat),
-        ]:
+        for  model, loader in [(mlp_lat,  test_loader_lat)]:
             metrics = metrics_report_mlp(
                 loader,
                 model,
-                f"{train_name}-{test_name}-{space}",
+                f"{train_name}-{test_name}",
                 device=device,
                 class_names=le.classes_
             )
@@ -311,7 +292,7 @@ for train_name in domains_train.keys():
             results.append({
                 "train": train_name,
                 "test": test_name,
-                "space": space,
+                "space": "latent",
                 "balanced_accuracy": metrics["Balanced_Accuracy"],
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
@@ -319,6 +300,80 @@ for train_name in domains_train.keys():
                 "roc_auc": metrics["ROC_AUC_Macro"],
                 "cm": metrics["Confusion Matrix"],
             })
+
+
+# ============================================================
+# POOLED EVALUATION — train con todos los source domains
+# ============================================================
+print("\n" + "="*70)
+print("TRAIN DOMAIN: ALL (A+B+C+MARISMA+RKI pooled)")
+print("="*70)
+
+all_tr_idx = np.concatenate([
+    splits["splits_per_domain"][sk]["train_idx"]
+    for sk in SPLIT_NAMES.values()
+    if sk in splits["splits_per_domain"]
+])
+all_va_idx = np.concatenate([
+    splits["splits_per_domain"][sk]["val_idx"]
+    for sk in SPLIT_NAMES.values()
+    if sk in splits["splits_per_domain"]
+])
+
+Z_tr_pool = Z_final[all_tr_idx]
+y_tr_pool = label_final[all_tr_idx]
+Z_va_pool = Z_final[all_va_idx]
+y_va_pool = label_final[all_va_idx]
+
+le_pool = LabelEncoder()
+y_tr_pool_enc = le_pool.fit_transform(y_tr_pool)
+y_va_pool_enc = le_pool.transform(y_va_pool)
+n_classes_pool = len(le_pool.classes_)
+
+print(f"Pooled train: {len(Z_tr_pool)} | Pooled val: {len(Z_va_pool)}")
+
+print("\n--- Training MLP (latent) ---")
+mlp_lat_pool = LinearProbe_Extended(
+    latent_dim=Z_tr_pool.shape[1],
+    n_species=n_classes_pool,
+    epochs=50,
+    lr=1e-3,
+    patience=10,
+)
+mlp_lat_pool.trainloop(
+    make_loader(Z_tr_pool, y_tr_pool_enc, shuffle=True),
+    make_loader(Z_va_pool, y_va_pool_enc),
+    device,
+)
+
+for test_name in test_sets.keys():
+    print("\n" + "="*70)
+    print(f"TEST DOMAIN: {test_name}")
+    print("="*70)
+
+    Z_te, _ = test_sets_latent[test_name]
+    _, y_te = test_sets[test_name]
+    y_te_enc = le_pool.transform(y_te)
+
+    metrics = metrics_report_mlp(
+        make_loader(Z_te, y_te_enc),
+        mlp_lat_pool,
+        f"ALL-{test_name}",
+        device=device,
+        class_names=le_pool.classes_,
+    )
+
+    results.append({
+        "train": "ALL",
+        "test":  test_name,
+        "space": "latent",
+        "balanced_accuracy": metrics["Balanced_Accuracy"],
+        "f1_macro":          metrics["F1_Macro"],
+        "recall_macro":      metrics["Recall_Macro"],
+        "specificity_macro": metrics["Specificity_Macro"],
+        "roc_auc":           metrics["ROC_AUC_Macro"],
+        "cm":                metrics["Confusion Matrix"],
+    })
 
 
 # ============================================================
