@@ -3,27 +3,20 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 
-class MLPClassifier(nn.Module):
-    def __init__(self, input_dim, n_species):
+class LinearProbe(nn.Module):
+    def __init__(self, latent_dim=64, n_species=6):
         super().__init__()
-        self.input_dim = input_dim
+        self.latent_dim = latent_dim
         self.n_species = n_species
-
-        self.net = nn.Sequential(
-            nn.Linear(input_dim, 2048), nn.ReLU(),
-            nn.Linear(2048, 1024), nn.ReLU(),
-            nn.Linear(1024, 512), nn.ReLU(),
-            nn.Linear(512, 64), nn.ReLU(),
-            nn.Linear(64, n_species)
-        )
+        self.net = nn.Linear(latent_dim, n_species)
 
     def forward(self, x):
         x = self.net(x)
         return x
 
-class MLPClassifier_Extended(MLPClassifier):
-    def __init__(self, input_dim, n_species, epochs, lr, patience):
-        super().__init__(input_dim, n_species)
+class LinearProbe_Extended(LinearProbe):
+    def __init__(self, latent_dim=64, n_species=6, epochs=100, lr=1e-3, patience=10):
+        super().__init__(latent_dim, n_species)
         self.epochs = epochs
         self.lr = lr
         self.patience = patience
