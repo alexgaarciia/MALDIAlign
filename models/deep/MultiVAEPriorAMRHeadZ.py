@@ -6,12 +6,12 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from models.deep.networks import ConditionalPrior
-from models.deep.MultiVAEAMRHead import MultiVAE_Bernoulli
+from models.deep.MultiVAEAMRHeadZ import MultiVAE_Bernoulli
 
 from src.evaluation.metrics import compute_multilabel_auc, compute_per_antibiotic_auc
 
 
-class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head(MultiVAE_Bernoulli):
+class MultiVAE_Bernoulli_SpeciesPrior_AMR_HeadZ(MultiVAE_Bernoulli):
     """
     Multi-decoder VAE with species-conditional latent prior.
     
@@ -20,7 +20,7 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head(MultiVAE_Bernoulli):
     Decoder: p(x | z, domain)
     """
 
-    def __init__(self, input_dim, latent_dim, num_domains, n_species, n_antibiotics, lambda_amr, pos_weight=None, antibiotic_names=None):
+    def __init__(self, input_dim, latent_dim, num_domains, n_species, n_antibiotics, lambda_amr, pos_weight=None, antibiotic_names=None, use_fixed_prior=False):
         super().__init__(input_dim, latent_dim, num_domains)
 
         self.n_species = n_species
@@ -29,43 +29,64 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head(MultiVAE_Bernoulli):
         self.n_antibiotics = n_antibiotics
         self.pos_weight = pos_weight
         self.antibiotic_names = antibiotic_names
+        self.use_fixed_prior  = use_fixed_prior
+        self.n_amr_samples = 1
 
-        trunk_output_dim = 32 
+        # Prior aprendible solo si no usamos N(0,1) fijo
+        if not use_fixed_prior:
+            self.prior = ConditionalPrior(n_species=n_species, latent_dim=latent_dim)
 
-        self.amr_trunk = nn.Sequential(
-            nn.LayerNorm(latent_dim),       
-
-            nn.Linear(latent_dim, 64),      
+        self.amr_trunk = nn.Sequential( 
+            nn.LayerNorm(latent_dim), 
+            nn.Linear(latent_dim, latent_dim // 2), 
             nn.GELU(),
-            nn.Dropout(0.5),
-            nn.Linear(64, trunk_output_dim), 
-            nn.GELU(),
-            nn.Dropout(0.3),
+            nn.Dropout(0.3)) 
+        self.amr_heads = nn.ModuleList([nn.Linear(latent_dim // 2, 1) for _ in range(n_antibiotics)])
 
-            nn.LayerNorm(trunk_output_dim),
-        )
-        # One head per antibiotic
-        self.amr_heads = nn.ModuleList([nn.Linear(trunk_output_dim, 1) for _ in range(n_antibiotics)])
+        # trunk_output_dim = 32 
+        # self.amr_trunk = nn.Sequential(
+        #     nn.LayerNorm(latent_dim),       
+
+        #     nn.Linear(latent_dim, 64),      
+        #     nn.GELU(),
+        #     nn.Dropout(0.5),
+        #     nn.Linear(64, trunk_output_dim), 
+        #     nn.GELU(),
+        #     nn.Dropout(0.3),
+
+        #     nn.LayerNorm(trunk_output_dim),
+        # )
+        # # One head per antibiotic
+        # self.amr_heads = nn.ModuleList([nn.Linear(trunk_output_dim, 1) for _ in range(n_antibiotics)])
+
 
     def elbo_loss(self, x, mu, logvar, z, domain_id, species_id, beta=1.0):
         # Log-likelihood p(x|z,d)
         RE = self.decoder.log_prob(x, z, domain_id)
 
-        # Build species one-hot
-        species_onehot = torch.nn.functional.one_hot(
-            species_id, num_classes=self.n_species
-        ).float()
+        if self.use_fixed_prior:
+            # KL contra N(0,1) estándar
+            KL = -0.5 * torch.sum(
+                1 + logvar - mu.pow(2) - logvar.exp(),
+                dim=1,
+            )
+        else:
+ 
+            # Build species one-hot
+            species_onehot = torch.nn.functional.one_hot(
+                species_id, num_classes=self.n_species
+            ).float()
 
-        # Prior p(z | species)
-        mu_p, logvar_p = self.prior(species_onehot)
+            # Prior p(z | species)
+            mu_p, logvar_p = self.prior(species_onehot)
 
-        # KL(q(z|x) || p(z|species))
-        KL = -0.5 * torch.sum(
-            1
-            + (logvar - logvar_p)
-            - ((mu - mu_p) ** 2 + logvar.exp()) / logvar_p.exp(),
-            dim=1,
-        )
+            # KL(q(z|x) || p(z|species))
+            KL = -0.5 * torch.sum(
+                1
+                + (logvar - logvar_p)
+                - ((mu - mu_p) ** 2 + logvar.exp()) / logvar_p.exp(),
+                dim=1,
+            )
 
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
@@ -79,8 +100,6 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head(MultiVAE_Bernoulli):
         )
 
         amr_loss = torch.tensor(0.0, device=x.device)
-        n_tasks = 0
-
         per_antibiotic_losses = {}
         per_antibiotic_counts = {}
 
@@ -88,66 +107,75 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head(MultiVAE_Bernoulli):
             if amr_labels.ndim == 1:
                 amr_labels = amr_labels.view(-1, 1)
 
-            for j in range(amr_logits.shape[1]):
-                mask_j = ~torch.isnan(amr_labels[:, j])
+            std = torch.exp(0.5 * logvar)
+            sample_losses = []
 
-                if mask_j.sum() == 0:
-                    per_antibiotic_losses[j] = np.nan
-                    per_antibiotic_counts[j] = 0
-                    continue
+            for k in range(self.n_amr_samples):
+                z_k = z if k == 0 else (mu + std * torch.randn_like(std))
+                h_k = self.amr_trunk(z_k)
+                logits_k = torch.cat([head(h_k) for head in self.amr_heads], dim=1)
 
-                logits_j = amr_logits[mask_j, j]
-                labels_j = amr_labels[mask_j, j]
+                task_loss_k = torch.tensor(0.0, device=x.device)
+                n_tasks_k   = 0
+                ab_losses_k = {}
+                ab_counts_k = {}
 
-                if self.pos_weight is not None:
-                    if self.pos_weight.ndim == 0 or len(self.pos_weight) == 1:
-                        pos_weight_j = self.pos_weight.to(x.device)
+                for j in range(logits_k.shape[1]):
+                    mask_j = ~torch.isnan(amr_labels[:, j])
+                    if mask_j.sum() == 0:
+                        ab_losses_k[j] = np.nan
+                        ab_counts_k[j] = 0
+                        continue
+
+                    logits_j = logits_k[mask_j, j]
+                    labels_j = amr_labels[mask_j, j]
+
+                    if self.pos_weight is not None:
+                        pos_weight_j = (
+                            self.pos_weight.to(x.device)
+                            if (self.pos_weight.ndim == 0 or len(self.pos_weight) == 1)
+                            else self.pos_weight[j].to(x.device)
+                        )
                     else:
-                        pos_weight_j = self.pos_weight[j].to(x.device)
-                else:
-                    pos_weight_j = None
-                    
-                smoothed_labels = labels_j * (1-0.1) + 0.05
-                loss_j = F.binary_cross_entropy_with_logits(
-                    logits_j,
-                    smoothed_labels,
-                    pos_weight=pos_weight_j,
-                    reduction="mean"
-                )
+                        pos_weight_j = None
 
-                amr_loss += loss_j
-                n_tasks += 1
+                    smoothed_labels = labels_j * 0.9 + 0.05
+                    loss_j = F.binary_cross_entropy_with_logits(
+                        logits_j, smoothed_labels,
+                        pos_weight=pos_weight_j,
+                        reduction="mean",
+                    )
+                    task_loss_k += loss_j
+                    n_tasks_k   += 1
+                    ab_losses_k[j] = loss_j.item()
+                    ab_counts_k[j] = int(mask_j.sum().item())
 
-                per_antibiotic_losses[j] = loss_j.item()
-                per_antibiotic_counts[j] = int(mask_j.sum().item())
+                if n_tasks_k > 0:
+                    sample_losses.append(task_loss_k / n_tasks_k)
 
-            if n_tasks > 0:
-                amr_loss = amr_loss / n_tasks
+                if k == 0:
+                    per_antibiotic_losses = ab_losses_k
+                    per_antibiotic_counts = ab_counts_k
+
+            if sample_losses:
+                amr_loss = torch.stack(sample_losses).mean()
                 loss = loss + self.lambda_amr * amr_loss
 
         return loss, recon, kl, amr_loss, per_antibiotic_losses, per_antibiotic_counts
 
-class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_Extended(MultiVAE_Bernoulli_SpeciesPrior_AMR_Head):
-    def __init__(self, input_dim, latent_dim, num_domains, n_species, n_antibiotics, lambda_amr=0.1, pos_weight=None, antibiotic_names=None, epochs=100, lr=1e-4, annealing_epochs=50, patience=20):
-        super().__init__(
-            input_dim=input_dim,
-            latent_dim=latent_dim,
-            num_domains=num_domains,
-            n_species=n_species,
-            n_antibiotics=n_antibiotics,
-            lambda_amr=lambda_amr,
-            pos_weight=pos_weight,
-            antibiotic_names=antibiotic_names
-        )
+class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(MultiVAE_Bernoulli_SpeciesPrior_AMR_HeadZ):
+    def __init__(self, input_dim, latent_dim, num_domains, n_species, n_antibiotics, lambda_amr=0.1, pos_weight=None, antibiotic_names=None, epochs=100, lr=1e-4, annealing_epochs=50, patience=20, use_fixed_prior=False):
+        super().__init__(input_dim=input_dim, latent_dim=latent_dim, num_domains=num_domains, n_species=n_species, n_antibiotics=n_antibiotics, lambda_amr=lambda_amr, pos_weight=pos_weight, antibiotic_names=antibiotic_names, use_fixed_prior=use_fixed_prior)
 
         self.epochs = epochs
         self.lr = lr
         self.annealing_epochs = annealing_epochs
         self.patience = patience
 
-        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-4)
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-3)
 
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.5, patience=10, min_lr=1e-6)
+        # self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.5, patience=10, min_lr=1e-6)
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.5, patience=20, min_lr=1e-6, cooldown=10)
 
         self.loss_during_training = []
         self.reconstruc_during_training = []
@@ -163,9 +191,16 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_Extended(MultiVAE_Bernoulli_Speci
         patience_counter = 0
         best_state = None
 
-        for epoch in range(self.epochs):
-            beta = 1
+        prior_mode = "N(0,1) fixed" if self.use_fixed_prior else "learned prior"
+        anneal_mode = f"annealing ({self.annealing_epochs} epochs)" if self.annealing_epochs is not None else "no annealing (beta=1)"
+        print(f"Training mode: VAE | Prior: {prior_mode} | {anneal_mode}")
 
+        for epoch in range(self.epochs):
+            if self.annealing_epochs is None:
+                beta = 1.0
+            else:
+                beta = min(0.1, (epoch + 1) / self.annealing_epochs)
+                
             # =======================
             # TRAIN
             # =======================

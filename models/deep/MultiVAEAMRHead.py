@@ -67,7 +67,7 @@ class MultiVAE_Bernoulli(nn.Module):
         # AMR predicion
         amr_logits = None
         if hasattr(self, "amr_heads"):
-            h = self.amr_trunk(z)
+            h = self.amr_trunk(mu)
             amr_logits = torch.cat([head(h) for head in self.amr_heads], dim=1)
 
         return mu, logvar, z, amr_logits

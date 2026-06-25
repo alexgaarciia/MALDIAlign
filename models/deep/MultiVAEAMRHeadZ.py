@@ -66,8 +66,9 @@ class MultiVAE_Bernoulli(nn.Module):
         
         # AMR predicion
         amr_logits = None
-        if hasattr(self, "amr_head"):
-            amr_logits = self.amr_head(mu)
+        if hasattr(self, "amr_heads"):
+            h = self.amr_trunk(z)
+            amr_logits = torch.cat([head(h) for head in self.amr_heads], dim=1)
 
         return mu, logvar, z, amr_logits
 
@@ -121,7 +122,10 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
         best_state = None
 
         for epoch in range(self.epochs):
-            beta = min(1.0, (epoch + 1) / self.annealing_epochs)
+            if self.annealing_epochs is None:
+                beta = 1.0
+            else:
+                beta = min(0.1, (epoch + 1) / self.annealing_epochs)
 
             # =======================
             #        TRAIN
