@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 from sklearn.manifold import TSNE
@@ -170,6 +169,9 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, ove
     species_list = sorted(df["species"].unique())
     hospitals = sorted(df["hospital"].unique()) if "hospital" in df.columns else []
 
+    colormap = plt.cm.get_cmap('tab20', len(species_list))
+    colors = [colormap(i) for i in range(len(species_list))]
+
     # -------------------------
     # Misclassified indices
     # -------------------------
@@ -184,79 +186,86 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, ove
     # 1) GLOBAL VIEW — COLORED BY SPECIES
     # ============================================================
     if not per_species and not overlay_per_hospital and not overlay_per_year:
-        plt.figure(figsize=(12, 10))
+        plt.figure(figsize=(15, 10))
+        ax = plt.gca()
 
         for i, sp in enumerate(species_list):
             subset_real = df[(df["species"] == sp) & (df["source"] == "real")]
             subset_prior = df[(df["species"] == sp) & (df["source"] == "prior")]
 
-            # real samples
-            plt.scatter(
+            # Muestras reales
+            ax.scatter(
                 subset_real["x"],
                 subset_real["y"],
                 s=10,
                 alpha=0.25,
+                color=colors[i], # Comma corregida aquí
                 label=sp
             )
 
-            # prior samples
-            plot_prior_star(plt.gca(), subset_prior, i, label="Prior samples" if i == 0 else None)
+            # Muestras del Prior (Estrellas)
+            plot_prior_star(ax, subset_prior, i, label="Prior samples" if i == 0 else None)
 
-        # Overlay misclassified points
-        plot_misclassified(plt.gca(), mis_points)
+        # 4. Pintar los errores encima de todo
+        if mis_points is not None:
+            plot_misclassified(ax, mis_points)
 
-        plt.title("t-SNE (colored by species)")
+        plt.title("t-SNE Projection of the Latent Space", fontsize=15)
         plt.xlabel("t-SNE 1")
         plt.ylabel("t-SNE 2")
 
-        # species legend (colors)
+        # 5. LEYENDA DE ESPECIES (A la derecha, fuera del plot)
         species_handles = [
-            Line2D([0], [0],
-                marker='o',
-                color='w',
-                label=sp,
-                markerfacecolor=plt.cm.tab10(i),
-                markersize=8)
+            Line2D([0], [0], marker='o', color='w', label=sp,
+                   markerfacecolor=colors[i], markersize=8)
             for i, sp in enumerate(species_list)
         ]
 
-        # marker type legend 
-        has_prior = (df["source"] == "prior").any()
-
-        marker_handles = [
-            Line2D([0], [0], marker='o', color='k',
-                linestyle='None', markersize=6,
-                label="Real samples")
-        ]
-
-        if has_prior:
-            marker_handles.append(
-                Line2D([0], [0], marker='*', color='k',
-                    linestyle='None', markersize=12,
-                    label="Prior samples")
-            )
-
-        if mis_points is not None:
-            marker_handles.append(
-                Line2D([0], [0], marker='x', color='purple',
-                    linestyle='None', markersize=8,
-                    label="Misclassified samples")
-            )
-
-        legend1 = plt.legend(
+        leg_species = ax.legend(
             handles=species_handles,
             title="Species",
-            loc="upper left",
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5), 
             frameon=True,
-            fontsize=8,
-            title_fontsize=9
+            fontsize=9
         )
+        ax.add_artist(leg_species)
 
-        plt.gca().add_artist(legend1)
-        plt.legend(handles=marker_handles, title="Marker type", loc="upper right", frameon=True, fontsize=8)
+        # 6. LEYENDA DE MARCADORES (Tipo de punto)
+        has_prior = (df["source"] == "prior").any()
+        has_misclassified = mis_points is not None
+        
+        marker_handles = []
+
+        # Si hay estrellas o hay fallos, entonces explicamos qué es cada cosa
+        if has_prior or has_misclassified:
+            marker_handles.append(
+                Line2D([0], [0], marker='o', color='k', linestyle='None', markersize=6, label="Real samples")
+            )
+            
+            if has_prior:
+                marker_handles.append(
+                    Line2D([0], [0], marker='*', color='k', linestyle='None', markersize=12, label="Prior samples")
+                )
+
+            if has_misclassified:
+                marker_handles.append(
+                    Line2D([0], [0], marker='x', color='purple', linestyle='None', markersize=8, label="Misclassified")
+                )
+
+            # Solo llamamos a ax.legend si la lista no está vacía
+            ax.legend(
+                handles=marker_handles, 
+                title="Marker type", 
+                loc="upper right", 
+                frameon=True, 
+                fontsize=8
+            )
+
+        # Ajuste de layout para que no se corte la leyenda lateral
+        plt.tight_layout(rect=[0, 0, 0.82, 1])
 
         handle_save_show(save, path)
-
 
     # ============================================================
     # 2) PER-SPECIES VIEW — COLORED BY HOSPITAL
