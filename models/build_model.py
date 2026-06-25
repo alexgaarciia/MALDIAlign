@@ -2,16 +2,15 @@ from models.deep.VAEBernoulli import VAE_Bernoulli_Extended
 from models.deep.MultiVAE import MultiVAE_Bernoulli_Extended
 from models.deep.MultiVAECoral import MultiVAE_CORAL
 from models.deep.cVAE import ConditionalVAE_Bernoulli_Extended
-from models.deep.cVAEInvariant import InvariantCVAE_Bernoulli_Extended
-from models.deep.cVAEInvariantSpecies import InvariantCVAESpecies_Bernoulli_Extended
-from models.deep.cVAESpecies import SpeciesCVAE_Bernoulli_Extended
-from models.deep.cVAEPrior import ConditionalVAE_Bernoulli_SpeciesPrior_Extended
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.deep.DANN import DANNFull_Extended
-from models.deep.MultiVAEPriorAMR import MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended
+from models.deep.MultiVAEPriorAMRHead import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_Extended
+from models.deep.MultiVAEPriorAMRHeadZ import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ
+from models.deep.IWAEAMRHead import MultiVAE_Bernoulli_SpeciesPrior_AMR_IWAE_Extended
+from models.deep.MultiVAEPriorAMRHeadZChen import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZChinos
 
 
-def build_model(cfg: dict, input_dim: int):
+def build_model(cfg: dict, input_dim: int, antibiotic_names=None, num_domains=None):
     """
     Instantiate a model based on the configuration dictionary.
 
@@ -40,14 +39,19 @@ def build_model(cfg: dict, input_dim: int):
     training_cfg = cfg["training"]
     model_type = model_cfg["type"]
 
+    if num_domains is not None and "num_domains" not in model_cfg:
+        model_cfg = {**model_cfg, "num_domains": num_domains}
+
     if model_type == "vae_bernoulli":
         model = VAE_Bernoulli_Extended(
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg.get("num_domains", 1),
+            use_species_prior=model_cfg.get("use_species_prior", False),
+            n_species=model_cfg.get("n_species", None),
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
-        )
+            patience=training_cfg["patience"])
 
     elif model_type == "vae_multidecoder":
         model = MultiVAE_Bernoulli_Extended(
@@ -73,48 +77,7 @@ def build_model(cfg: dict, input_dim: int):
         model = ConditionalVAE_Bernoulli_Extended(
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
-            cond_dim=model_cfg["cond_dim"],
-            epochs=training_cfg["epochs"],
-            annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
-        )
-
-    elif model_type == "cvae_invariant":
-        model = InvariantCVAE_Bernoulli_Extended(
-            input_dim=input_dim,
-            latent_dim=model_cfg["latent_dim"],
-            cond_dim=model_cfg["cond_dim"],
-            epochs=training_cfg["epochs"],
-            annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
-        )
-
-    elif model_type == "cvae_invariant_species":
-        model =  InvariantCVAESpecies_Bernoulli_Extended(
-            input_dim=input_dim,
-            latent_dim=model_cfg["latent_dim"],
-            n_species=model_cfg["cond_dim"],
-            epochs=training_cfg["epochs"],
-            annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
-        )
-
-    elif model_type == "cvae_species":
-        model =  SpeciesCVAE_Bernoulli_Extended(
-            input_dim=input_dim,
-            latent_dim=model_cfg["latent_dim"],
-            n_species=model_cfg["cond_dim"],
-            epochs=training_cfg["epochs"],
-            annealing_epochs=training_cfg["annealing_epochs"],
-            patience=training_cfg["patience"],
-        )
-
-    elif model_type == "cvae_species_prior":
-        model = ConditionalVAE_Bernoulli_SpeciesPrior_Extended(
-            input_dim=input_dim,
-            latent_dim=model_cfg["latent_dim"],
-            cond_dim=model_cfg["cond_dim"],      
-            n_species=model_cfg["n_species"],   
+            num_domains=model_cfg["cond_dim"],
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"],
@@ -136,24 +99,70 @@ def build_model(cfg: dict, input_dim: int):
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
             n_species=model_cfg["n_species"],
-            n_domains=model_cfg.get("num_domains", 2),
-            source_domain_id=model_cfg.get("source_domain_id", 0),
+            n_domains=model_cfg["num_domains"],
             epochs=training_cfg["epochs"],
             lr=float(training_cfg["lr"]),
-            lambda_domain=float(model_cfg.get("lambda_domain", 0.01)),
             patience=training_cfg["patience"],
         )
 
-    elif model_type == "vae_multidecoder_prior_amr":
-        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_Extended(
+    elif model_type == "vae_multidecoder_prior_amr_head":
+        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_Extended(
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
             num_domains=model_cfg["num_domains"],
             n_species=model_cfg["n_species"],
+            n_antibiotics=model_cfg["n_antibiotics"],
             lambda_amr=training_cfg["lambda_amr"],
+            antibiotic_names=antibiotic_names,
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"],
+        )
+
+    elif model_type == "vae_multidecoder_prior_amr_head_z":
+        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            n_species=model_cfg["n_species"],
+            n_antibiotics=model_cfg["n_antibiotics"],
+            lambda_amr=training_cfg["lambda_amr"],
+            antibiotic_names=antibiotic_names,
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg.get("annealing_epochs", None),
+            patience=training_cfg["patience"],
+            use_fixed_prior = model_cfg.get("use_fixed_prior", False),
+        )
+
+    elif model_type == "iwae":
+        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_IWAE_Extended(
+            input_dim        = input_dim,
+            latent_dim       = model_cfg["latent_dim"],
+            num_domains      = model_cfg["num_domains"],
+            n_species        = model_cfg["n_species"],
+            n_antibiotics    = model_cfg["n_antibiotics"],
+            lambda_amr       = training_cfg["lambda_amr"],
+            antibiotic_names = antibiotic_names,
+            epochs           = training_cfg["epochs"],
+            annealing_epochs =training_cfg.get("annealing_epochs", None),
+            patience   = training_cfg["patience"],
+            n_iwae_samples   = model_cfg.get("n_iwae_samples", 5),
+            use_fixed_prior = model_cfg.get("use_fixed_prior", False)
+        )
+
+    elif model_type == "vae_multidecoder_prior_amr_head_zchinos":
+        model = MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZChinos(
+            input_dim=input_dim,
+            latent_dim=model_cfg["latent_dim"],
+            num_domains=model_cfg["num_domains"],
+            n_species=model_cfg["n_species"],
+            n_antibiotics=model_cfg["n_antibiotics"],
+            lambda_amr=training_cfg["lambda_amr"],
+            antibiotic_names=antibiotic_names,
+            epochs=training_cfg["epochs"],
+            annealing_epochs=training_cfg.get("annealing_epochs", None),
+            patience=training_cfg["patience"],
+            use_fixed_prior = model_cfg.get("use_fixed_prior", False),
         )
 
     else:
