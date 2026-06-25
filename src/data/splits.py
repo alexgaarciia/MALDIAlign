@@ -3,7 +3,7 @@ import numpy as np
 from sklearn.model_selection import StratifiedShuffleSplit, train_test_split
 
 
-def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
+def subsample_dataset_stratified(data, labels, meta, n_samples, global_indices, ood=False, random_state=42):
     """
     Perform stratified subsampling of a dataset based on class labels (e.g., species),
     preserving the original label distribution.
@@ -54,9 +54,7 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
     n_total = len(data)
     n_samples = min(n_samples, n_total)
 
-    # -------------------------------------------------
-    # CASE 1: n_samples == 0
-    # -------------------------------------------------
+    # Case 1: n_samples == 0
     if n_samples == 0:
         finetuning_dict = {
             "data": np.empty((0, data.shape[1])),
@@ -72,7 +70,7 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
             "data": data,
             "label": labels,
             "meta": meta.reset_index(drop=True),
-            "idx": np.arange(n_total)
+            "idx": global_indices
         }
 
         return {
@@ -80,15 +78,13 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
             "test": test_dict
         }
 
-    # -------------------------------------------------
-    # CASE 2: n_samples == n_total
-    # -------------------------------------------------
+    # Case 2: n_samples == n_total
     if n_samples == n_total:
         finetuning_dict = {
             "data": data,
             "label": labels,
             "meta": meta.reset_index(drop=True),
-            "idx": np.arange(n_total)
+            "idx": global_indices
         }
 
         if not ood:
@@ -106,32 +102,32 @@ def subsample_dataset_stratified(data, labels, meta, n_samples, ood=False):
             "test": test_dict
         }
 
-    # -------------------------------------------------
-    # NORMAL CASE: 0 < n_samples < n_total
-    # -------------------------------------------------
+    # Normal case: 0 < n_samples < n_total
     splitter = StratifiedShuffleSplit(
         n_splits=1,
         test_size=n_samples,
-        random_state=42
+        random_state=random_state
     )
 
-    idx_rest, idx_finetuning = next(splitter.split(data, labels))
-    idx_rest, idx_finetuning = np.sort(idx_rest), np.sort(idx_finetuning)
+    idx_rest_local, idx_ft_local = next(splitter.split(data, labels))
+
+    idx_ft = global_indices[idx_ft_local]
+    idx_rest = global_indices[idx_rest_local]
 
     finetuning_dict = {
-        "data": data[idx_finetuning],
-        "label": labels[idx_finetuning],
-        "meta": meta.iloc[idx_finetuning].reset_index(drop=True),
-        "idx": idx_finetuning
+        "data": data[idx_ft_local],
+        "label": labels[idx_ft_local],
+        "meta": meta.iloc[idx_ft_local].reset_index(drop=True),
+        "idx": idx_ft
     }
 
     if not ood:
         return {"finetuning": finetuning_dict}
 
     test_dict = {
-        "data": data[idx_rest],
-        "label": labels[idx_rest],
-        "meta": meta.iloc[idx_rest].reset_index(drop=True),
+        "data": data[idx_rest_local],
+        "label": labels[idx_rest_local],
+        "meta": meta.iloc[idx_rest_local].reset_index(drop=True),
         "idx": idx_rest
     }
 
