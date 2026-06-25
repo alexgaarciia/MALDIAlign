@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from models.deep.networks import Encoder, BernoulliDecoder
+from models.deep.networks import Encoder, BernoulliDecoder, ConditionalPrior
 
 
 class VAE_Bernoulli(nn.Module):
@@ -12,7 +12,7 @@ class VAE_Bernoulli(nn.Module):
     optionally conditioned on a domain identifier.
     """
 
-    def __init__(self, input_dim, latent_dim, num_domains=1):
+    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None):
         """
         Parameters
         ----------
@@ -24,8 +24,14 @@ class VAE_Bernoulli(nn.Module):
             Number of domains for optional domain conditioning in the decoder.
         """
         super().__init__()
+        self.use_species_prior = use_species_prior
         self.encoder = Encoder(input_dim, latent_dim)
         self.decoder = BernoulliDecoder(latent_dim, input_dim, num_domains=num_domains)
+
+        if use_species_prior:
+            assert n_species is not None, "n_species must be provided when use_species_prior=True"
+            self.prior = ConditionalPrior(n_species=n_species, latent_dim=latent_dim)
+            self.n_species = n_species
 
     def reparameterize(self, mu, logvar):
         """
@@ -60,7 +66,7 @@ class VAE_Bernoulli(nn.Module):
         _ = self.decoder(z, domain_id=domain_id)
         return mu, logvar, z
 
-    def elbo_loss(self, x, mu, logvar, z, beta=1.0, domain_id=None):
+    def elbo_loss(self, x, mu, logvar, z, beta=1.0, domain_id=None, species_id=None):
         """
         Computes the ELBO loss.
 
@@ -70,52 +76,37 @@ class VAE_Bernoulli(nn.Module):
             Weight of the KL divergence term.
         """
         RE = self.decoder.log_prob(x, z, domain_id=domain_id)
-        KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+
+        if self.use_species_prior and species_id is not None:
+            species_onehot = torch.nn.functional.one_hot(species_id, num_classes=self.n_species).float()
+            mu_p, logvar_p = self.prior(species_onehot)
+            KL = -0.5 * torch.sum(1 + (logvar - logvar_p) - ((mu - mu_p) ** 2 + logvar.exp()) / logvar_p.exp(), dim=1)
+        else:
+            KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
+
         NLL = -(RE - beta * KL)
         return NLL.mean(), (-RE).mean(), KL.mean()
 
-
 class VAE_Bernoulli_Extended(VAE_Bernoulli):
-    """
-    Extended VAE including optimizer, training and validation loops,
-    KL annealing, early stopping and loss tracking.
-    """
-
-    def __init__(
-        self,
-        input_dim,
-        latent_dim,
-        num_domains=1,
-        lr=1e-3,
-        epochs=100,
-        patience=10,
-        annealing_epochs=50,
-    ):
-        super().__init__(input_dim, latent_dim, num_domains=num_domains)
+    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None, lr=1e-3, epochs=100, patience=10, annealing_epochs=50):
+        super().__init__(input_dim, latent_dim, num_domains=num_domains, use_species_prior=use_species_prior, n_species=n_species)
         self.lr = lr
         self.epochs = epochs
         self.annealing_epochs = annealing_epochs
         self.patience = patience
-
-        self.optimizer = optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=1e-5
-        )
-
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
         self.loss_during_training = []
         self.reconstruc_during_training = []
         self.KL_during_training = []
 
     def trainloop(self, trainloader, validloader, device):
-        """
-        Training loop with validation, KL annealing and early stopping.
-        """
         self.to(device)
         best_val_loss = float("inf")
         patience_counter = 0
         best_state = None
 
         for epoch in range(self.epochs):
-            beta = min(1.0, (epoch + 1) / self.annealing_epochs)
+            beta = 1
 
             # =======================
             #        TRAIN
@@ -123,13 +114,11 @@ class VAE_Bernoulli_Extended(VAE_Bernoulli):
             self.train()
             total_loss, total_recon, total_kl = 0, 0, 0
 
-            for x, domains in trainloader:
-                x, domains = x.to(device), domains.to(device)
+            for batch in trainloader:
+                x, domains, species = batch[0].to(device), batch[1].to(device), batch[2].to(device) if self.use_species_prior else None
                 self.optimizer.zero_grad()
                 mu, logvar, z = self.forward(x, domain_id=domains)
-                loss, recon, kl = self.elbo_loss(
-                    x, mu, logvar, z, beta, domain_id=domains
-                )
+                loss, recon, kl = self.elbo_loss(x, mu, logvar, z, beta, domain_id=domains, species_id=species)
                 loss.backward()
                 self.optimizer.step()
                 total_loss += loss.item()
@@ -147,12 +136,10 @@ class VAE_Bernoulli_Extended(VAE_Bernoulli):
             val_loss, val_recon, val_kl = 0.0, 0.0, 0.0
 
             with torch.no_grad():
-                for x, domains in validloader:
-                    x, domains = x.to(device), domains.to(device)
+                for batch in validloader:
+                    x, domains, species = batch[0].to(device), batch[1].to(device), batch[2].to(device) if self.use_species_prior else None
                     mu, logvar, z = self.forward(x, domain_id=domains)
-                    loss, recon, kl = self.elbo_loss(
-                        x, mu, logvar, z, beta, domain_id=domains
-                    )
+                    loss, recon, kl = self.elbo_loss(x, mu, logvar, z, beta, domain_id=domains, species_id=species)
                     val_loss += loss.item()
                     val_recon += recon.item()
                     val_kl += kl.item()
