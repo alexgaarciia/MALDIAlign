@@ -5,7 +5,7 @@ experiment:
 
 data:
   domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
-  species_list: ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
+  species_list: ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium","Enterobacter_cloacae_complex"]
   normalization: row_minmax
   test_size: 0.2
   batch_size: 128
@@ -14,15 +14,16 @@ data:
 model:
   type: vae_bernoulli
   latent_dim: 64
-  num_domains: 5
-  use_species_prior: False
+  num_domains: 1
+  use_species_prior: True
+  n_species: 6
 
 training:
   epochs: 100
   lr: 1e-4
   annealing_epochs: 100
   patience: 20
-  metrics_plot_title: "VAE — Multi-decoder, standard prior"
+  metrics_plot_title: "VAE — Single decoder, species prior"
 
 evaluation:
   compute_tsne: False

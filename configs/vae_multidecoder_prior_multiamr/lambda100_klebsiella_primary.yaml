@@ -1,0 +1,35 @@
+experiment:
+  name: vae_multidecoder_amr_primary
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  pkl_path: /export/usuarios01/agnavarr/MALDIAlign/amr_global_final.pkl
+  domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA"]
+  species_list: ["Klebsiella_Pneumoniae"]
+  antibiotics_filter: ["Ceftazidime", "Ciprofloxacin", "Piperacillin-Tazobactam"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 256
+  use_species_weights: false
+  use_year_domains: false
+
+model:
+  type: vae_multidecoder_amr_primary
+  latent_dim: 128
+  num_domains: 4
+  n_species: 1
+  n_antibiotics: 3
+
+training:
+  epochs: 200
+  lr: 1e-4
+  lambda_amr: 10.0
+  lambda_recon: 1.0
+  patience: 30
+  metrics_plot_title: "VAE AMR-Primary — Klebsiella Pneumoniae"
+
+evaluation:
+  use_domain: false
+  compute_tsne: true
+  

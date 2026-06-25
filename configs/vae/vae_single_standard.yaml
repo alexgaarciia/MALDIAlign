@@ -11,18 +11,18 @@ data:
   batch_size: 128
   use_species_weights: False
 
-model:
+model: 
   type: vae_bernoulli
   latent_dim: 64
-  num_domains: 5
-  use_species_prior: False
+  num_domains: 1
+  use_specie_prior: False
 
-training:
+training: 
   epochs: 100
   lr: 1e-4
   annealing_epochs: 100
   patience: 20
-  metrics_plot_title: "VAE — Multi-decoder, standard prior"
+  metrics_plot_title: "VAE"
 
 evaluation:
   compute_tsne: False
