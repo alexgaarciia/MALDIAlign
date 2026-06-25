@@ -8,3 +8,6 @@ experiments/results/vae_bernoulli/20260412_155836/model.pth filter=lfs diff=lfs 
 experiments/results/vae_multidecoder_coral/20260412_160952/model.pth filter=lfs diff=lfs merge=lfs -text
 experiments/results/vae_multidecoder_prior/20260409_100009/model.pth filter=lfs diff=lfs merge=lfs -text
 experiments/results/cvae/20260412_183159/model.pth filter=lfs diff=lfs merge=lfs -text
+experiments/results/vae_bernoulli/20260614_235109/model.pth filter=lfs diff=lfs merge=lfs -text
+experiments/results/vae_bernoulli/20260614_235237/model.pth filter=lfs diff=lfs merge=lfs -text
+experiments/results/vae_bernoulli/20260614_235638/model.pth filter=lfs diff=lfs merge=lfs -text
