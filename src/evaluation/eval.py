@@ -2,10 +2,12 @@ import torch
 import numpy as np
 import pandas as pd
 
+from sklearn.metrics import roc_auc_score, average_precision_score
+
 from torch.utils.data import TensorDataset, DataLoader
 
 from src.visualization.viz import compute_tsne_df, compute_tsne_per_species, plot_tsne_global, plot_tsne_species
-from src.visualization.amr_viz import plot_tsne_amr
+from src.visualization.amr_viz import plot_tsne_amr, plot_tsne_amr_split_by_hospital
 
 
 def eval_model(model, dataloader, device, use_domain=False):
@@ -90,7 +92,7 @@ def eval_model(model, dataloader, device, use_domain=False):
     return np.concatenate(mus_all, axis=0)
 
 
-def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, prior_samples=None, prior_labels=None, antibiotics_list=None):
+def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, prior_samples=None, prior_labels=None, antibiotics_list=None, target_domain_name=None):
     """
     Executes a t-SNE visualization suite on latent representations.
 
@@ -150,6 +152,10 @@ def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, pr
                 safe_atb = atb.replace("/", "-")
                 out_path = output_dir / f"{prefix}_tsne_amr_{safe_atb}.png"
                 plot_tsne_amr(df_all, tsne_results, antibiotic_col=atb, save=True, path=out_path)
+
+                if target_domain_name:
+                    out_path_split = output_dir / f"{prefix}_tsne_amr_{safe_atb}_SPLIT.png"
+                    plot_tsne_amr_split_by_hospital(df_all, atb, target_domain_name, save=True, path=out_path_split)
     else:
         print("No AMR data provided. Skipping AMR t-SNE plots.")
 
@@ -280,3 +286,42 @@ def load_model(model, path):
     model.to(device)
     model.eval()
     return model
+
+
+def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512):
+    model.eval()
+    X_tensor = torch.tensor(X, dtype=torch.float32)
+    all_logits = []
+
+    with torch.no_grad():
+        for i in range(0, len(X_tensor), batch_size):
+            batch = X_tensor[i : i + batch_size].to(device)
+            mu, _ = model.encoder(batch)
+
+            if hasattr(model, "amr_trunk"):
+                h = model.amr_trunk(mu)
+            elif hasattr(model, "amr_drop"):
+                h = model.amr_drop(mu)
+            else:
+                h = mu
+
+            amr_logits = torch.cat([head(h) for head in model.amr_heads], dim=1)
+            all_logits.append(amr_logits.cpu())
+
+    all_logits = torch.cat(all_logits, dim=0).numpy()
+    probs = 1 / (1 + np.exp(-all_logits))
+
+    results = {}
+    for j, atb_name in enumerate(ab_list):
+        y_true = amr_labels[:, j]
+        valid  = ~np.isnan(y_true)
+        y_true_clean = y_true[valid].astype(int)
+        y_prob = probs[valid, j]
+        if len(y_true_clean) < 10 or len(np.unique(y_true_clean)) < 2:
+            continue
+        results[atb_name] = {
+            "auc":    roc_auc_score(y_true_clean, y_prob),
+            "pr_auc": average_precision_score(y_true_clean, y_prob),
+            "n":      int(valid.sum()),
+        }
+    return results
