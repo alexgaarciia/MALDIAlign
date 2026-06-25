@@ -27,6 +27,7 @@ from datetime import datetime
 
 import pickle
 import numpy as np
+import pandas as pd
 import torch
 
 from sklearn.preprocessing import LabelEncoder
@@ -38,6 +39,7 @@ from src.evaluation.metrics import metrics_report_mlp
 from src.evaluation.eval import make_loader, load_model, encode_latent
 
 from models.baselines.mlp import MLPClassifier_Extended
+from models.baselines.mlp_latent import LinearProbe_Extended
 
 
 # ============================================================
@@ -224,22 +226,22 @@ mlp_orig = MLPClassifier_Extended(
 
 mlp_orig.trainloop(
     make_loader(X_train, y_train_enc, shuffle=True),
-    make_loader(X_val,   y_val_enc),
+    make_loader(X_val, y_val_enc),
     device
 )
 
 print("\nTRAINING MLP IN LATENT SPACE")
-mlp_lat = MLPClassifier_Extended(
-    input_dim=Z_train.shape[1],
+mlp_lat = LinearProbe_Extended(
+    latent_dim=Z_train.shape[1],
     n_species=n_classes,
     epochs=50,
-    lr=1e-3,
+    lr=1e-4,
     patience=10
 )
 
 mlp_lat.trainloop(
     make_loader(Z_train, y_train_enc, shuffle=True),
-    make_loader(Z_val,   y_val_enc),
+    make_loader(Z_val, y_val_enc),
     device
 )
 
@@ -329,6 +331,11 @@ print("="*60)
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 output_dir = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/pretrained_mlp") / timestamp
 output_dir.mkdir(parents=True, exist_ok=True)
+
+df_results = pd.DataFrame(results)
+results_path = output_dir / "results_global_mlp.csv"
+df_results.to_csv(results_path, index=False)
+print("Saved results:", results_path)
 
 path_mlp_orig = output_dir / "mlp_original_ABC_MAR_RKI.pth"
 path_mlp_lat  = output_dir / "mlp_latent_ABC_MAR_RKI.pth"
