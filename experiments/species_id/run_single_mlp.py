@@ -34,7 +34,7 @@ from models.baselines.mlp import MLPClassifier_Extended
 # CONFIG
 # ============================================================
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUT_PATH = Path(f"experiments/results/classifiers/mlp/{timestamp}/mlp_raw_baseline.csv")
+OUT_PATH = Path(f"experiments/species_id/results/{timestamp}/mlp_raw_baseline.csv")
 SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
