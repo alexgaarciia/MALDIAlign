@@ -1,3 +1,6 @@
+############################################################
+# IMPORTS
+############################################################
 import pickle
 from datetime import datetime
 from pathlib import Path
@@ -17,11 +20,18 @@ from src.evaluation.eval import eval_model, run_tsne_evaluation
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 
 
+############################################################
+# CONFIG
+############################################################
 TARGET_SPECIES = [
     "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
     "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"
 ]   
 
+
+############################################################
+# UTILS
+############################################################
 def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning_mode, n_prev, n_new, output_dir, device, consider_prev_domains=True, run_latent_evaluation=True):
     """
     Executes finetuning of a pretrained MultiVAE model
@@ -42,10 +52,6 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     device : torch.device
         CPU or CUDA.
     """
-
-    ####################
-    # EXPERIMENT SETUP
-    ####################
     print("\n===== INITIALIZING EXPERIMENT =====")
 
     # Extract base model name automatically
@@ -74,10 +80,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     print("Output directory:", experiment_dir)
     print("Experiment directory created.")
 
-
-    ####################
-    # LOAD DATA 
-    ####################
+    # Load data
     print("\n===== LOADING DATA =====")
     cfg = load_config()
 
@@ -90,9 +93,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     rki = load_rki(cfg["data"]["RKI_FULL"])
     msumg = load_msumg(cfg["data"]["MSUMG_FULL"])
 
-    ####################
-    # CONCATENATE
-    ####################
+    # Concatenate
     data_list = [
         driams_A["data"], driams_B["data"], driams_C["data"],
         marisma["data"], rki["data"]
@@ -112,22 +113,16 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     label_all_raw = np.concatenate(label_list)
     meta_all_raw = pd.concat(meta_list, ignore_index=True)
 
-    ####################
-    # FILTER BY SPECIES
-    ####################
+    # Filter by species
     mask_sp = np.isin(label_all_raw, TARGET_SPECIES)
     data_all = data_all_raw[mask_sp]
     label_all = label_all_raw[mask_sp]
     meta_all = meta_all_raw.iloc[mask_sp].reset_index(drop=True)
 
-    ####################
-    # NORMALIZE
-    ####################
+    # Normalize
     data_all = row_minmax_normalize(data_all)
 
-    ####################
-    # LOAD SPLITS
-    ####################
+    # Load splits
     print("Loading finetuning indices...")
     with open(splits_path, "rb") as f:
         splits_idx = pickle.load(f)
@@ -161,9 +156,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
 
     print(f"Finetuning samples: A={len(dataA_ft)}, B={len(dataB_ft)}, C={len(dataC_ft)}, M={len(dataM_ft)}, R={len(dataR_ft)}")
 
-    ####################
-    # TARGET DOMAIN (indices are local to filtered dataset)
-    ####################
+    # Target domain (indices are local to filtered dataset)
     mask_sp_D = np.isin(driams_D["label"], TARGET_SPECIES)
     dataD = row_minmax_normalize(driams_D["data"][mask_sp_D])
     labelD = driams_D["label"][mask_sp_D]
@@ -206,9 +199,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     else:
         raise ValueError(f"Unknown target_domain: {target_domain}")
     
-    ####################
-    # BUILD FINETUNING DATASET
-    ####################
+    # Build finetuning dataset
     print("Building finetuning dataset...")
 
     if consider_prev_domains:
@@ -230,10 +221,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     species_ft = species_encoder.transform(y_ft)
     print(f"Finetuning samples: {len(X_ft)}")
 
-
-    ####################
-    # LOAD BASE MODEL
-    ####################
+    # Load base model
     print("Loading base pretrained model...")
 
     vae = MultiVAE_Bernoulli_SpeciesPrior_Extended(
@@ -245,10 +233,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     vae.load_state_dict(torch.load(pretrained_model_path, map_location=device))
     vae.to(device)
 
-
-    ####################
-    # ADD NEW DECODER 
-    ####################
+    # Add new decoder 
     print(f"Adding new decoder for {target_domain}...")
 
     old_decoders = vae.decoder.net
@@ -270,13 +255,8 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     vae.decoder.num_domains = len(vae.decoder.net)
     vae.to(device)
 
-
-    ####################
-    # TRAIN / VALID SPLIT
-    ####################
+    # Train/val split
     print("Preparing training split...")
-
-    # Robust stratify for tiny few-shot
     counts = np.bincount(species_ft)
     can_stratify = (len(np.unique(species_ft)) > 1) and (counts.min() >= 2)
 
@@ -294,10 +274,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
     train_loader = DataLoader(TensorDataset(torch.tensor(X_tr, dtype=torch.float32), torch.tensor(d_tr, dtype=torch.long), torch.tensor(s_tr, dtype=torch.long)), batch_size=64, shuffle=True)
     val_loader = DataLoader(TensorDataset(torch.tensor(X_val, dtype=torch.float32), torch.tensor(d_val, dtype=torch.long), torch.tensor(s_val, dtype=torch.long)), batch_size=64, shuffle=False)
 
-
-    ####################
-    # FINETUNING
-    ####################
+    # Finetuning
     print("\n===== STARTING FINETUNING =====")
     new_domain_idx = len(vae.decoder.net) - 1
 
@@ -360,10 +337,7 @@ def run_finetuning(splits_path, target_domain, pretrained_model_path, finetuning
 
     print("Finetuning complete. Model saved.")
 
-
-    ####################
-    # LATENT EVALUATION
-    ####################
+    # Latent evaluation
     if run_latent_evaluation:
         print("\n===== RUNNING LATENT EVALUATION =====")
 

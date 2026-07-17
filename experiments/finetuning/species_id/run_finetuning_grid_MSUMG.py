@@ -19,6 +19,7 @@ if target is not None and target != cwd:
     os.chdir(target)
     sys.path.append(str(target))
 
+
 ############################################################
 # IMPORTS
 ############################################################
@@ -37,11 +38,12 @@ from src.data.datasets import load_driams, load_marisma, load_rki, load_msumg
 from src.data.preprocessing import row_minmax_normalize
 from src.evaluation.metrics import metrics_report_mlp
 from src.evaluation.eval import encode_latent, make_loader
-from experiments.finetuning.run_finetuning import run_finetuning
+from experiments.finetuning.species_id.run_finetuning import run_finetuning
 
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.baselines.mlp import MLPClassifier_Extended
 from models.baselines.mlp_latent import LinearProbe_Extended
+
 
 ############################################################
 # CONFIG
@@ -52,8 +54,8 @@ TARGET_SPECIES = [
 ]
 
 PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/model.pth")
-VAE_SPLITS_PATH       = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
-SPLITS_PATH           = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260525_100756")
+VAE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
+SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/species_id/output_data/splits_20260525_100756")
 OUTPUT_PATH = Path("/export/usuarios_ml4ds/agnavarr/MALDIAlign/finetuning_6species")
 OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
@@ -63,6 +65,7 @@ GRID_NEW     = np.arange(50, 251, 50)
 RUN_LATENT_EVALUATION = False
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 ############################################################
 # LOAD DATA
@@ -114,6 +117,7 @@ print(f"Source samples: {len(data_final)}")
 print(f"MS-UMG samples: {len(data_msumg)}")
 print("===== DATA LOADED =====")
 
+
 ############################################################
 # LOAD PRETRAINED VAE
 ############################################################
@@ -132,8 +136,9 @@ print("\n===== ENCODING LATENT SPACE =====")
 Z_final  = encode_latent(vae_pretrained, data_final,  device)
 Z_MSUMG  = encode_latent(vae_pretrained, data_msumg,  device)
 
+
 ############################################################
-# TRAIN GLOBAL BASELINE MLPs (once)
+# TRAIN GLOBAL BASELINE MLPs
 ############################################################
 print("\n===== TRAINING GLOBAL BASELINE MLPs =====")
 
@@ -184,6 +189,7 @@ mlp_orig.eval()
 mlp_lat.eval()
 print("===== GLOBAL MLPs TRAINED =====")
 
+
 ############################################################
 # GRID EVALUATION LOOP (MS-UMG)
 ############################################################
@@ -218,7 +224,7 @@ for i_part in range(N_PARTITIONS):
 
             test_loader_orig = make_loader(X_test, y_test_enc)
 
-            # --- Few-shot RF ---
+            # Few-shot RF
             rf_few = RandomForestClassifier(
                 n_estimators=200, max_depth=20,
                 class_weight="balanced_subsample",
@@ -226,7 +232,7 @@ for i_part in range(N_PARTITIONS):
             )
             rf_few.fit(X_ft, y_ft)
 
-            # --- Few-shot MLP (original space) ---
+            # Few-shot MLP (original space)
             X_ft_tr, X_ft_val, y_ft_tr, y_ft_val = train_test_split(
                 X_ft, y_ft_enc,
                 test_size=0.2,
@@ -243,7 +249,7 @@ for i_part in range(N_PARTITIONS):
                 device
             )
 
-            # --- Finetuning VAEs ---
+            # Finetuning VAEs
             vae_full, _, _ = run_finetuning(
                 splits_path=split_file, target_domain="MS-UMG",
                 pretrained_model_path=PRETRAINED_MODEL_PATH,
@@ -260,45 +266,23 @@ for i_part in range(N_PARTITIONS):
                 consider_prev_domains=(n_prev > 0),
                 run_latent_evaluation=RUN_LATENT_EVALUATION,
             )
-            # vae_dec, _, _ = run_finetuning(
-            #     splits_path=split_file, target_domain="MS-UMG",
-            #     pretrained_model_path=PRETRAINED_MODEL_PATH,
-            #     finetuning_mode="decoder_only", n_prev=n_prev, n_new=n_new,
-            #     output_dir=OUTPUT_PATH, device=device,
-            #     consider_prev_domains=False,
-            #     run_latent_evaluation=RUN_LATENT_EVALUATION,
-            # )
-            # vae_partial, _, _ = run_finetuning(
-            #     splits_path=split_file, target_domain="MS-UMG",
-            #     pretrained_model_path=PRETRAINED_MODEL_PATH,
-            #     finetuning_mode="partial_encoder", n_prev=n_prev, n_new=n_new,
-            #     output_dir=OUTPUT_PATH, device=device,
-            #     consider_prev_domains=False,
-            #     run_latent_evaluation=RUN_LATENT_EVALUATION,
-            # )
 
-            # --- Encode test set ---
+            # Encode test set
             Z_test_zero    = encode_latent(vae_pretrained, X_test, device)
             Z_test_full    = encode_latent(vae_full,       X_test, device)
             Z_test_freeze  = encode_latent(vae_freeze,     X_test, device)
-            # Z_test_dec     = encode_latent(vae_dec,        X_test, device)
-            # Z_test_partial = encode_latent(vae_partial,    X_test, device)
 
             test_loader_zero    = make_loader(Z_test_zero,    y_test_enc)
             test_loader_full    = make_loader(Z_test_full,    y_test_enc)
             test_loader_freeze  = make_loader(Z_test_freeze,  y_test_enc)
-            # test_loader_dec     = make_loader(Z_test_dec,     y_test_enc)
-            # test_loader_partial = make_loader(Z_test_partial, y_test_enc)
 
-            # --- Evaluate all models ---
+            # Evaluate all models 
             evals = [
                 ("MLP_original",    metrics_report_mlp(test_loader_orig,    mlp_orig,     "MS-UMG", device=device, class_names=le.classes_)),
                 ("MLP_latent_zero", metrics_report_mlp(test_loader_zero,    mlp_lat,      "MS-UMG", device=device, class_names=le.classes_)),
                 ("MLP_few",         metrics_report_mlp(test_loader_orig,    mlp_few_orig, "MS-UMG", device=device, class_names=le.classes_)),
                 ("FT_full_MLP",     metrics_report_mlp(test_loader_full,    mlp_lat,      "MS-UMG", device=device, class_names=le.classes_)),
                 ("FT_freeze_MLP",   metrics_report_mlp(test_loader_freeze,  mlp_lat,      "MS-UMG", device=device, class_names=le.classes_)),
-                # ("FT_decoder_MLP",  metrics_report_mlp(test_loader_dec,     mlp_lat,      "MS-UMG", device=device, class_names=le.classes_)),
-                # ("FT_partial_MLP",  metrics_report_mlp(test_loader_partial, mlp_lat,      "MS-UMG", device=device, class_names=le.classes_)),
             ]
 
             for model_name, metrics in evals:

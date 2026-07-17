@@ -18,6 +18,7 @@ if target is not None and target != cwd:
     os.chdir(target)
     sys.path.append(str(target))
 
+
 ############################################################
 # IMPORTS
 ############################################################
@@ -25,7 +26,6 @@ import torch
 import numpy as np
 import pandas as pd
 import pickle
-import joblib
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -35,13 +35,14 @@ from src.config.loader import load_config
 from src.data.io import load_pkl
 from src.data.datasets import load_driams, load_marisma, load_rki
 from src.data.preprocessing import row_minmax_normalize
-from src.evaluation.metrics import metrics_report, metrics_report_mlp
-from src.evaluation.eval import encode_latent, make_loader, load_model
-from experiments.finetuning.run_finetuning import run_finetuning
+from src.evaluation.metrics import metrics_report_mlp
+from src.evaluation.eval import encode_latent, make_loader
+from experiments.finetuning.species_id.run_finetuning import run_finetuning
 
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.baselines.mlp import MLPClassifier_Extended
 from models.baselines.mlp_latent import LinearProbe_Extended
+
 
 ############################################################
 # CONFIG
@@ -52,9 +53,9 @@ TARGET_SPECIES = [
 ]
 
 PRETRAINED_MODEL_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/model.pth")
-SPLITS_PATH           = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data/splits_20260525_100756")
-VAE_SPLITS_PATH       = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
-OUTPUT_PATH           = Path("/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/finetuning_6species")
+SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/species_id/output_data/splits_20260525_100756")
+VAE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
+OUTPUT_PATH = Path("/export/data_ml4ds/bacteria_id/MALDIAlign_Alex/finetuning_6species")
 OUTPUT_PATH.mkdir(parents=True, exist_ok=True)
 
 N_PARTITIONS = 10
@@ -63,6 +64,7 @@ GRID_NEW     = np.arange(50, 251, 50)
 RUN_LATENT_EVALUATION = False
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 
 ############################################################
 # LOAD DATA
@@ -112,6 +114,7 @@ le.fit(TARGET_SPECIES)
 
 print("===== DATA LOADED =====")
 
+
 ############################################################
 # LOAD PRETRAINED VAE
 ############################################################
@@ -130,8 +133,9 @@ print("\n===== ENCODING LATENT SPACE =====")
 Z_final = encode_latent(vae_pretrained, data_final, device)
 Z_D     = encode_latent(vae_pretrained, dataD, device)
 
+
 ############################################################
-# TRAIN GLOBAL BASELINE MLPs (once)
+# TRAIN GLOBAL BASELINE MLPs
 ############################################################
 print("\n===== TRAINING GLOBAL BASELINE MLPs =====")
 
@@ -186,6 +190,7 @@ mlp_orig.eval()
 mlp_lat.eval()
 print("===== GLOBAL MLPs TRAINED =====")
 
+
 ############################################################
 # GRID EVALUATION LOOP
 ############################################################
@@ -220,7 +225,7 @@ for i_part in range(N_PARTITIONS):
 
             test_loader_orig = make_loader(X_test, y_test_enc)
 
-            # --- Few-shot RF ---
+            # Few-shot RF ---
             rf_few = RandomForestClassifier(
                 n_estimators=200, max_depth=20,
                 class_weight="balanced_subsample",
@@ -228,7 +233,7 @@ for i_part in range(N_PARTITIONS):
             )
             rf_few.fit(X_ft, y_ft)
 
-            # --- Few-shot MLP (original space) ---
+            # Few-shot MLP (original space)
             X_ft_tr, X_ft_val, y_ft_tr, y_ft_val = train_test_split(
                 X_ft, y_ft_enc,
                 test_size=0.2,
@@ -245,7 +250,7 @@ for i_part in range(N_PARTITIONS):
                 device
             )
 
-            # --- Finetuning VAEs ---
+            # Finetuning VAEs
             vae_full, _, _ = run_finetuning(
                 splits_path=split_file, target_domain="DRIAMS_D",
                 pretrained_model_path=PRETRAINED_MODEL_PATH,
@@ -263,7 +268,7 @@ for i_part in range(N_PARTITIONS):
                 run_latent_evaluation=RUN_LATENT_EVALUATION,
             )
 
-            # --- Encode test set ---
+            # Encode test set
             Z_test_zero   = encode_latent(vae_pretrained, X_test, device)
             Z_test_full   = encode_latent(vae_full,       X_test, device)
             Z_test_freeze = encode_latent(vae_freeze,     X_test, device)
@@ -272,7 +277,7 @@ for i_part in range(N_PARTITIONS):
             test_loader_full   = make_loader(Z_test_full,   y_test_enc)
             test_loader_freeze = make_loader(Z_test_freeze, y_test_enc)
 
-            # --- Evaluate all models ---
+            # Evaluate all models 
             evals = [
                 ("MLP_original",    metrics_report_mlp(test_loader_orig,   mlp_orig,     "DRIAMS_D", device=device, class_names=le.classes_)),
                 ("MLP_latent_zero", metrics_report_mlp(test_loader_zero,   mlp_lat,      "DRIAMS_D", device=device, class_names=le.classes_)),
@@ -297,6 +302,7 @@ for i_part in range(N_PARTITIONS):
 
             del vae_full, vae_freeze
             torch.cuda.empty_cache()
+
 
 ############################################################
 # SAVE RESULTS

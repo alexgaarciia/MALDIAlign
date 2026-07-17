@@ -1,6 +1,6 @@
-############################
+############################################################
 # PATH & EXPERIMENT SETUP
-############################
+############################################################
 import os
 import sys
 import pickle
@@ -26,18 +26,18 @@ print("Working directory:", os.getcwd())
 print("Project root:", target)
 
 
-############################
+############################################################
 # IMPORTS
-############################
+############################################################
 from sklearn.utils import resample
 from src.config.loader import load_config
 from src.data.datasets import load_driams, load_msumg
 from src.data.splits import subsample_dataset_stratified
 
 
-############################
+############################################################
 # CONFIGURATION
-############################
+############################################################
 domains_prev = ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
 domains_new  = ["DRIAMS_D", "MS-UMG"]
 
@@ -53,9 +53,9 @@ SOURCE_SPLITS_PATH = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/re
 BASE_OUTPUT = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/finetuning/output_data")
 
 
-############################
+############################################################
 # LOAD DATA
-############################
+############################################################
 print("\n===== LOADING DATA & SPLITS =====")
 
 if not SOURCE_SPLITS_PATH.exists():
@@ -99,9 +99,9 @@ labelM = msumg_dict["label"][mask_M]
 metaM = msumg_dict["meta"][mask_M].reset_index(drop=True)
 
 
-############################
+############################################################
 # OUTPUT DIRECTORY
-############################
+############################################################
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 experiment_dir = BASE_OUTPUT / f"splits_{timestamp}"
 experiment_dir.mkdir(parents=True, exist_ok=True)
@@ -110,9 +110,9 @@ print("\n===== OUTPUT DIRECTORY =====")
 print("Saving splits to:", experiment_dir)
 
 
-############################
+############################################################
 # GENERATE PARTITIONS
-############################
+############################################################
 domains_prev = ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
 domains_new  = ["DRIAMS_D", "MS-UMG"]
 
@@ -129,9 +129,7 @@ for i_part in range(N_PARTITIONS):
     partition_dir = experiment_dir / f"run_{i_part}"
     partition_dir.mkdir(parents=True, exist_ok=True)
     
-    # ──────────────────────────────────────────────────────────
     # Split DRIAMS-D: finetuning pool vs test holdout
-    # ──────────────────────────────────────────────────────────
     local_idx_D = np.arange(len(dataD))
     d_split = subsample_dataset_stratified(
         data=dataD,
@@ -148,9 +146,7 @@ for i_part in range(N_PARTITIONS):
     
     print(f"DRIAMS-D: pool={len(ft_pool_D)}, test={len(test_D)}")
     
-    # ──────────────────────────────────────────────────────────
     # Split MS-UMG: finetuning pool vs test holdout
-    # ──────────────────────────────────────────────────────────
     local_idx_M = np.arange(len(dataM))
     m_split = subsample_dataset_stratified(
         data=dataM,
@@ -167,9 +163,7 @@ for i_part in range(N_PARTITIONS):
     
     print(f"MS-UMG: pool={len(ft_pool_M)}, test={len(test_M)}")
     
-    # ──────────────────────────────────────────────────────────
     # Generate grid of (n_prev, n_new) splits
-    # ──────────────────────────────────────────────────────────
     for n_prev in GRID_PREV:
         for n_new in GRID_NEW:
             current_splits = {}
