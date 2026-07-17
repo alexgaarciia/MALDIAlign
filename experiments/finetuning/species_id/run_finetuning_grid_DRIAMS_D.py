@@ -225,7 +225,7 @@ for i_part in range(N_PARTITIONS):
 
             test_loader_orig = make_loader(X_test, y_test_enc)
 
-            # Few-shot RF ---
+            # Few-shot RF
             rf_few = RandomForestClassifier(
                 n_estimators=200, max_depth=20,
                 class_weight="balanced_subsample",
