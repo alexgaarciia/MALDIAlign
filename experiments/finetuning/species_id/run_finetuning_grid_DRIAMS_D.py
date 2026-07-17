@@ -37,7 +37,7 @@ from src.data.datasets import load_driams, load_marisma, load_rki
 from src.data.preprocessing import row_minmax_normalize
 from src.evaluation.metrics import metrics_report_mlp
 from src.evaluation.eval import encode_latent, make_loader
-from experiments.finetuning.species_id.run_finetuning import run_finetuning
+from finetuning.run_finetuning_species import run_finetuning
 
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.baselines.mlp import MLPClassifier_Extended
