@@ -1,27 +1,6 @@
 import pickle
 from pathlib import Path
 
-def verify_data_path(data_dir):
-    """
-    Check whether a given path exists and print the result.
-
-    Parameters
-    ----------
-    data_dir : str or pathlib.Path
-        Path to check.
-
-    Returns
-    -------
-    None
-        This function does not return anything. It only prints
-        whether the path exists or not.
-    """
-
-    if Path(data_dir).exists():
-        print(f"Path exists: {data_dir}")
-    else:
-        print(f"Path does not exist: {data_dir}")
-    
 
 def load_pkl(pkl_file):
     """

@@ -1,5 +1,6 @@
 import numpy as np
 
+
 def map_domains(meta):
     """
     Map each hospital to a unique integer domain ID.
@@ -20,31 +21,6 @@ def map_domains(meta):
     domain_ids = meta["hospital"].map(domain_map).values
 
     return domain_ids
-
-
-def map_domains_by_year(meta):
-    """
-    Map each (hospital, year) pair to a unique integer domain ID.
-
-    Parameters
-    ----------
-    meta : pd.DataFrame
-        Metadata DataFrame containing columns 'hospital' and 'year'.
-
-    Returns
-    -------
-    domain_ids : np.ndarray
-        Integer domain ID for each sample.
-    domain_map : dict
-        Mapping from (hospital, year) tuple to integer ID, sorted
-        deterministically so IDs are stable across runs.
-    """
-    pairs = list(zip(meta["hospital"], meta["year"].astype(str)))
-    unique_pairs = sorted(set(pairs))
-    domain_map = {p: i for i, p in enumerate(unique_pairs)}
-    domain_ids = np.array([domain_map[p] for p in pairs])
-    return domain_ids, domain_map
-
 
 def row_minmax_normalize(X):
     """
