@@ -16,6 +16,7 @@ if target is not None and target != cwd:
     os.chdir(target)
     sys.path.append(str(target))
 
+
 ############################################################
 # IMPORTS
 ############################################################
@@ -39,6 +40,7 @@ from src.evaluation.reconstruction_error import reconstruction_error, recon_ood_
 from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.baselines.mlp_latent import LinearProbe_Extended
 
+
 ############################################################
 # CONFIG
 ############################################################
@@ -57,7 +59,6 @@ timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 OUTPUT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/novelty_detection/combined") / timestamp
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# device = torch.device("cpu")
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Device: {device}")
 
@@ -77,6 +78,7 @@ model = MultiVAE_Bernoulli_SpeciesPrior_Extended(input_dim=6000, latent_dim=64, 
 model.load_state_dict(state)
 model.to(device).eval()
 print(f"Model loaded — num_domains={num_domains}")
+
 
 ############################################################
 # LOAD DATA
@@ -155,6 +157,7 @@ X_test  = np.vstack(all_X_te); y_test  = np.concatenate(all_y_te)
 
 print(f"Train: {len(X_train)} | Val: {len(X_val)} | Test (source): {len(X_test)}")
 
+
 ############################################################
 # ENCODE LATENT
 ############################################################
@@ -164,6 +167,7 @@ Z_test   = encode_latent(model, X_test,     device)
 Z_D      = encode_latent(model, dataD,      device)
 Z_msumg  = encode_latent(model, data_msumg, device)
 print(f"Z_train={Z_train.shape} | Z_test={Z_test.shape} | Z_D={Z_D.shape} | Z_msumg={Z_msumg.shape}")
+
 
 ############################################################
 # FIT GMM
@@ -181,8 +185,9 @@ ll_test  = gmm.score_samples(Z_test)
 ll_D     = gmm.score_samples(Z_D)
 ll_msumg = gmm.score_samples(Z_msumg)
 
+
 ############################################################
-# FIT LOG-NORMAL POR DECODER (reconstrucción)
+# FIT LOG-NORMAL BY DECODER
 ############################################################
 print("\n===== FITTING LOG-NORMAL PER DECODER =====")
 
@@ -228,6 +233,7 @@ for i, p in enumerate(SWEEP_PERCENTILES):
     print(f"  P{p} (GMM) / P{SWEEP_PERCENTILES_RECON[i]} (recon)  →  "
           f"GMM={thr_gmm[i]:.2f}  A={thr_recon_per_decoder['A'][i]:.3f}  MARISMA={thr_recon_per_decoder['MARISMA'][i]:.3f}")
 
+
 ############################################################
 # TRAIN MLP in latent space
 ############################################################
@@ -247,6 +253,7 @@ mlp_lat.trainloop(
     make_loader(Z_val,   y_vl_enc),
     device,
 )
+
 
 ############################################################
 # HELPERS
@@ -297,9 +304,9 @@ def compute_all_metrics(y_true, y_pred, y_probs, classes):
     return {"ba": ba, "f1": f1, "precision": precision, "recall": recall,
             "specificity": specificity, "roc_auc": roc_auc}
 
+
 ############################################################
-# CONSTRUIR OOD FLAGS POR CRITERIO — SOLO LOS 5 PERCENTILES DEFINIDOS
-# (sin función eval_at, todo calculado en línea)
+# BUILD OOD FLAGS FOR THE SELECTED PERCENTILE THRESHOLDS
 ############################################################
 preds_test  = get_predictions(mlp_lat, Z_test, device)
 preds_D     = get_predictions(mlp_lat, Z_D, device)
@@ -323,7 +330,6 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
 ]:
     criteria_results[ds_name] = {}
 
-    # --- GMM ---
     rows_gmm = []
     for i, p in enumerate(SWEEP_PERCENTILES):
         accepted = ll >= thr_gmm[i]
@@ -341,7 +347,6 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
         rows_gmm.append(row)
     criteria_results[ds_name]["GMM"] = rows_gmm
 
-    # --- Decoder A ---
     rows_A = []
     for i, p in enumerate(SWEEP_PERCENTILES):
         accepted = scores_dec["A"] <= thr_recon_per_decoder["A"][i]
@@ -359,7 +364,6 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
         rows_A.append(row)
     criteria_results[ds_name]["Decoder A"] = rows_A
 
-    # --- MARISMA ---
     rows_M = []
     for i, p in enumerate(SWEEP_PERCENTILES):
         accepted = scores_dec["MARISMA"] <= thr_recon_per_decoder["MARISMA"][i]
@@ -377,7 +381,7 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
         rows_M.append(row)
     criteria_results[ds_name]["MARISMA"] = rows_M
 
-    # Intersección: OOD solo si los 3 coinciden 
+    # Intersection
     rows_int = []
     for i, p in enumerate(SWEEP_PERCENTILES):
         ood_gmm = ll < thr_gmm[i]
@@ -400,7 +404,7 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
         rows_int.append(row)
     criteria_results[ds_name]["Intersection (3 agree)"] = rows_int
 
-    # Unión: OOD si AL MENOS 1 de los 3 lo marca
+    # Union
     rows_union = []
     for i, p in enumerate(SWEEP_PERCENTILES):
         ood_gmm = ll < thr_gmm[i]
@@ -423,50 +427,16 @@ for ds_name, ll, scores_dec, y_enc, preds, probs in [
         rows_union.append(row)
     criteria_results[ds_name]["Union (at least 1 agrees)"] = rows_union
 
+
 ############################################################
-# PLOTS — coverage vs cada métrica, 5 criterios, una figura por dataset
+# SUMMARY TABLE — Percentile sweep, five criteria, all metrics
 ############################################################
 criteria_colors = {
     "GMM": "#3B82F6", "Decoder A": "#10B981",
     "MARISMA": "#F59E0B", "Intersection (3 agree)": "#EF4444",
     "Union (at least 1 agrees)": "#8B5CF6",
 }
-for ds_name in ["Test-source", "DRIAMS-D", "MS-UMG"]:
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    axes = axes.flatten()
-    for ax, metric in zip(axes, metric_names):
-        for crit_name, color in criteria_colors.items():
-            rows = criteria_results[ds_name][crit_name]
-            cov = np.array([r["coverage"] for r in rows])
-            vals = np.array([r[metric] for r in rows], dtype=float)
-            mask = ~np.isnan(vals)
-            order = np.argsort(cov[mask])
 
-            cov_sorted = cov[mask][order]
-            vals_sorted = vals[mask][order]
-            percentiles_sorted = np.array(SWEEP_PERCENTILES)[mask][order]
-
-            ax.plot(cov_sorted, vals_sorted, color=color, lw=2, marker="o", label=crit_name)
-
-            for x, y, p in zip(cov_sorted, vals_sorted, percentiles_sorted):
-                ax.annotate(f"P{p}", (x, y), fontsize=6, color=color,
-                            textcoords="offset points", xytext=(3, 3))
-
-        ax.set_xlabel("Coverage (%)")
-        ax.set_ylabel(metric)
-        ax.set_title(metric, fontsize=11, fontweight="bold")
-        ax.grid(True, linestyle=":", alpha=0.4)
-        ax.set_xlim(100, 0)
-    axes[0].legend(fontsize=7, loc="lower right")
-    fig.suptitle(f"Coverage vs Metrics — {ds_name}\nGMM vs Decoder A vs MARISMA vs Intersection vs Union",
-                 fontsize=14, fontweight="bold")
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    plt.savefig(OUTPUT_DIR / f"plot_coverage_vs_metrics_combined_{ds_name.replace('-','_')}.png", dpi=150, bbox_inches="tight")
-    plt.show()
-
-############################################################
-# TABLA RESUMEN — sweep de percentiles, 5 criterios, todas las métricas
-############################################################
 print("\n===== COMBINED COVERAGE TABLE =====")
 
 for ds_name in ["Test-source", "DRIAMS-D", "MS-UMG"]:
@@ -516,7 +486,7 @@ for ds_name in ["Test-source", "DRIAMS-D", "MS-UMG"]:
     
 
 ############################################################
-# PER-SPECIES OOD POR CRITERIO — TARGET_SPECIES en Test-source, DRIAMS-D y MS-UMG
+# PER-SPECIES OOD RESULTS BY CRITERION — TARGET_SPECIES on Test-source, DRIAMS-D, and MS-UMG
 ############################################################
 print("\n===== PER-SPECIES OOD PER CRITERION =====")
 per_species_rows = {}
@@ -558,7 +528,7 @@ for ds_name, ll, scores_dec, labels in [
 
 
 ############################################################
-# PLOT — barplot agrupado: especies x criterio, un panel por percentil, por dataset
+# PLOT — Grouped bar chart: species × criterion, one panel per percentile, by dataset
 ############################################################
 criteria_list = ["GMM", "Decoder A", "MARISMA", "Intersection (3 agree)", "Union (at least 1 agrees)"]
 criteria_colors_list = [criteria_colors[c] for c in criteria_list]
@@ -591,8 +561,9 @@ for ds_name in ["Test-source", "DRIAMS-D", "MS-UMG"]:
     plt.savefig(OUTPUT_DIR / f"plot_per_species_ood_by_criterion_{ds_name.replace('-','_')}.png", dpi=150, bbox_inches="tight")
     plt.show()
 
+
 ############################################################
-# UNSEEN SPECIES — OOD POR CRITERIO (GMM, A, MARISMA, Intersección, Unión)
+# UNSEEN SPECIES — OOD RESULTS BY CRITERION (GMM, A, MARISMA, Intersection, Union)
 ############################################################
 print("\n===== UNSEEN SPECIES — OOD PER CRITERION =====")
 
@@ -666,7 +637,7 @@ print(f"\nEspecies con n>={MIN_N_UNSEEN}: {df_unseen_crit['species'].nunique()}"
 
 
 ############################################################
-# PLOT — barplot agrupado: especies x criterio, varios paneles, un percentil por figura
+# PLOT — Grouped bar chart: species × criterion, multiple panels, one percentile per figure
 ############################################################
 species_list_unseen = sorted(df_unseen_crit["species"].unique())
 n_species = len(species_list_unseen)
@@ -703,7 +674,6 @@ for p in SWEEP_PERCENTILES:
         ax.legend(fontsize=6, loc="upper right")
         ax.grid(True, axis="y", linestyle=":", alpha=0.4)
 
-        # también guardar cada panel como figura individual (en memoria, sin escribir a disco)
         fig_ind, ax_ind = plt.subplots(figsize=(16, 6.5))
         for i, (crit, color) in enumerate(zip(criteria_list, criteria_colors_list)):
             vals = sub[f"{crit}_pct_ood"].values
