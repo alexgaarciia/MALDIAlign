@@ -91,8 +91,6 @@ def main():
     data = prepare_data(
         domains=data_cfg["domains"],
         experiment_dir=experiment_dir,
-        target_domain=data_cfg.get("target_domain", None),
-        n_target_samples=data_cfg.get("n_target_samples", None),
         pkl_path=data_cfg.get("pkl_path"),
         species_list=data_cfg.get("species_list", None),
         antibiotics_filter=data_cfg.get("antibiotics_filter", None),
@@ -100,8 +98,6 @@ def main():
         test_size=data_cfg.get("test_size", 0.2),
         batch_size=data_cfg.get("batch_size", 64),
         use_species_weight=data_cfg.get("use_species_weights", False),
-        use_year_domains=data_cfg.get("use_year_domains", False),
-        ood_holdout=data_cfg.get("ood_holdout", None),
     )
  
     data_final = data["data_final"]

@@ -4,92 +4,22 @@ import pandas as pd
 import torch
 from torch.utils.data import TensorDataset, DataLoader
 
-from sklearn.model_selection import StratifiedShuffleSplit
-
-from src.config.loader import load_config 
+from src.config.loader import load_config
 from src.data.datasets import load_driams, load_marisma, load_msumg, load_rki
 from src.data.io import load_pkl
 from src.dataloaders.builders import construct_dataloaders
-from src.data.preprocessing import map_domains, map_domains_by_year, row_minmax_normalize
+from src.data.preprocessing import map_domains, row_minmax_normalize
 from src.data.splits import create_and_save_domain_splits
 
 
-def _stratified_subsample(indices, labels, n_samples, seed=42):
-    """
-    Subsample n_samples from indices, stratified by species labels.
-    Guarantees at least 1 sample per species when possible.
-    Returns (selected_global_indices, remaining_global_indices).
-    """
-    if n_samples == 0:
-        return np.array([], dtype=int), indices.copy()
-
-    if n_samples >= len(indices):
-        return indices.copy(), np.array([], dtype=int)
-
-    rng = np.random.RandomState(seed)
-    unique_classes = np.unique(labels)
-    # Step 1: guarantee at least 1 per species
-    guaranteed = []
-    for cls in unique_classes:
-        cls_local = np.where(labels == cls)[0]
-        pick = rng.choice(cls_local, size=1, replace=False)
-        guaranteed.extend(pick.tolist())
-
-    guaranteed = list(set(guaranteed))
-
-    if len(guaranteed) >= n_samples:
-        # More species than requested samples — pick n_samples species randomly
-        selected_local = np.array(rng.choice(guaranteed, size=n_samples, replace=False))
-    else:
-        # Step 2: fill remaining slots from the rest
-        n_more = n_samples - len(guaranteed)
-        remaining_pool = np.array([i for i in range(len(indices)) if i not in set(guaranteed)])
-
-        if n_more > 0 and len(remaining_pool) > 0:
-            remaining_labels = labels[remaining_pool]
-            unique_rem = np.unique(remaining_labels)
-
-            # Try stratified if possible
-            if len(unique_rem) >= 2 and n_more < len(remaining_pool):
-                try:
-                    splitter = StratifiedShuffleSplit(
-                        n_splits=1, test_size=n_more, random_state=seed
-                    )
-                    _, extra_local = next(splitter.split(remaining_pool, remaining_labels))
-                    extra = remaining_pool[extra_local]
-                except ValueError:
-                    extra = rng.choice(remaining_pool, size=n_more, replace=False)
-            else:
-                extra = rng.choice(remaining_pool, size=min(n_more, len(remaining_pool)), replace=False)
-
-            selected_local = np.array(sorted(set(guaranteed) | set(extra.tolist())))
-        else:
-            selected_local = np.array(guaranteed)
-
-    remaining_local = np.array([i for i in range(len(indices)) if i not in set(selected_local)])
-
-    return indices[selected_local], indices[remaining_local]
-
-
-def prepare_data(domains, experiment_dir, target_domain=None, n_target_samples=None,
-                 pkl_path=None, species_list=None, antibiotics_filter=None,
-                 normalization="row_minmax", test_size=0.2, seed=42, batch_size=64,
-                 use_species_weight=False, classification=False,
-                 use_year_domains=False, ood_holdout=None):
+def prepare_data(domains, experiment_dir, pkl_path=None, species_list=None, antibiotics_filter=None, normalization="row_minmax", test_size=0.2, seed=42, batch_size=64, use_species_weight=False, classification=False):
     """
     Load, preprocess and split MALDI-TOF datasets across multiple domains.
 
     Parameters
     ----------
     domains : list[str]
-        List of ALL domain identifiers to load (including target_domain).
-    target_domain : str or None
-        If set, this domain is treated specially: only n_target_samples are
-        included in VAE training (spectra only, AMR labels masked).
-        The rest become pure test data.
-    n_target_samples : int or None
-        Number of target domain samples to include in VAE training.
-        0 = zero-shot. None = include all (full alignment).
+        List of ALL domain identifiers to load.
     """
 
     cfg = load_config()
@@ -97,8 +27,6 @@ def prepare_data(domains, experiment_dir, target_domain=None, n_target_samples=N
     dataset_pkl = pkl_path
     print("dataset_pkl:", dataset_pkl)
     print("domains:", domains)
-    if target_domain:
-        print(f"Target domain: {target_domain} (n_target_samples={n_target_samples})")
 
     data_list, label_list, meta_list, amr_list = [], [], [], []
     antibiotics_names = ["AMR"]
@@ -285,34 +213,6 @@ def prepare_data(domains, experiment_dir, target_domain=None, n_target_samples=N
         
         print("\n" + "="*70)
 
-    # ===============================
-    # OOD HOLDOUT
-    # ===============================
-    if ood_holdout is None and use_year_domains:
-        ood_holdout = [("MARISMA", "2024")]
-
-    if ood_holdout:
-        ood_mask = np.zeros(len(meta_final), dtype=bool)
-        for (center, yr) in ood_holdout:
-            ood_mask |= (
-                (meta_final["hospital"] == center) &
-                (meta_final["year"].astype(str) == str(yr))
-            ).values
-
-        n_ood = int(ood_mask.sum())
-        if n_ood > 0:
-            print(f"\nOOD holdout: {n_ood} samples excluded from training")
-            for (center, yr) in ood_holdout:
-                n = int(((meta_final["hospital"] == center) & (meta_final["year"].astype(str) == str(yr))).sum())
-                if n > 0:
-                    print(f"  {center} ({yr}): {n} samples")
-
-            data_final = data_final[~ood_mask]
-            label_final = label_final[~ood_mask]
-            meta_final = meta_final.iloc[~ood_mask].reset_index(drop=True)
-            if amr_final is not None:
-                amr_final = amr_final[~ood_mask]
-
     # Normalize
     if normalization == "row_minmax":
         data_norm = row_minmax_normalize(data_final)
@@ -325,122 +225,20 @@ def prepare_data(domains, experiment_dir, target_domain=None, n_target_samples=N
     if classification:
         return {"X": data_norm, "y": label_indices, "meta": meta_final, "class_names": unique_species}
 
-    if use_year_domains:
-        domain_ids, domain_map = map_domains_by_year(meta_final)
-        num_domains = len(domain_map)
-        print(f"\nDomain mapping (center × year): {num_domains} domains")
-        for pair, idx in sorted(domain_map.items(), key=lambda x: x[1]):
-            print(f"  {idx}: {pair[0]} ({pair[1]})")
-    else:
-        domain_ids = map_domains(meta_final)
-        domain_map = None
-        num_domains = int(np.unique(domain_ids).shape[0])
+    domain_ids = map_domains(meta_final)
+    domain_map = None
+    num_domains = int(np.unique(domain_ids).shape[0])
 
     # ===============================
     # SPLITTING LOGIC
     # ===============================
-    import pickle
-
-    if target_domain is not None and n_target_samples is not None:
-        # -----------------------------------------------
-        # Progressive alignment experiment
-        # -----------------------------------------------
-        target_mask = (meta_final["hospital"] == target_domain).values
-        target_all_idx = np.where(target_mask)[0]
-        source_all_idx = np.where(~target_mask)[0]
-
-        print(f"\nTarget domain '{target_domain}': {len(target_all_idx)} total samples")
-        print(f"Source domains: {len(source_all_idx)} total samples")
-
-        # Subsample target: N for alignment training, rest for test
-        target_labels = label_indices[target_all_idx]
-        target_train_idx, target_test_idx = _stratified_subsample(
-            target_all_idx, target_labels, n_target_samples, seed=seed
-        )
-
-        # Print species distribution
-        if len(target_train_idx) > 0:
-            sel_species = label_final[target_train_idx]
-            unique_sel, counts_sel = np.unique(sel_species, return_counts=True)
-            print(f"\nTarget alignment samples ({len(target_train_idx)}):")
-            for sp, ct in zip(unique_sel, counts_sel):
-                print(f"  {sp}: {ct}")
-        else:
-            print("\nTarget alignment samples: 0 (zero-shot)")
-        print(f"Target test samples: {len(target_test_idx)}")
-
-        # Split source domains normally
-        # We need to remap indices: create_and_save_domain_splits works on 
-        # the full array, so we pass a subset meta but need global indices back
-        source_meta = meta_final.iloc[source_all_idx].reset_index(drop=True)
-        source_labels = label_indices[source_all_idx]
-
-        source_splits = {}
-        global_train, global_val, global_test = [], [], []
-
-        from sklearn.model_selection import train_test_split as sk_split
-
-        for domain in source_meta["hospital"].unique():
-            domain_local = np.where(source_meta["hospital"] == domain)[0]
-            domain_global = source_all_idx[domain_local]
-
-            idx_temp, idx_test = sk_split(
-                domain_global, test_size=0.2, random_state=seed,
-                stratify=label_indices[domain_global]
-            )
-            relative_val = 0.1 / 0.8
-            idx_train, idx_val = sk_split(
-                idx_temp, test_size=relative_val, random_state=seed,
-                stratify=label_indices[idx_temp]
-            )
-
-            print(f"\n[{domain}] Train: {len(idx_train)} | Val: {len(idx_val)} | Test: {len(idx_test)}")
-
-            source_splits[domain] = {
-                "train_idx": idx_train,
-                "val_idx": idx_val,
-                "test_idx": idx_test,
-            }
-            global_train.append(idx_train)
-            global_val.append(idx_val)
-            global_test.append(idx_test)
-
-        # Add target domain to splits
-        source_splits[target_domain] = {
-            "train_idx": target_train_idx,
-            "val_idx": np.array([], dtype=int),
-            "test_idx": target_test_idx,
-        }
-
-        # Global indices
-        train_idx = np.concatenate(global_train + [target_train_idx])
-        val_idx = np.concatenate(global_val)
-
-        split_dict = {
-            "splits_per_domain": source_splits,
-            "global": {
-                "train_idx": train_idx,
-                "val_idx": val_idx,
-                "test_idx": np.concatenate(global_test + [target_test_idx]),
-            }
-        }
-
-        save_path = experiment_dir / "data_splits.pkl"
-        with open(save_path, "wb") as f:
-            pickle.dump(split_dict, f)
-        print(f"\nSplits saved: {save_path}")
-
-    else:
-        # -----------------------------------------------
-        # Normal case: all domains treated equally
-        # -----------------------------------------------
-        split_dict = create_and_save_domain_splits(
-            labels=label_indices, meta=meta_final,
-            experiment_dir=experiment_dir,
-            val_size=0.1, test_size=0.2, seed=seed,
-        )
-        train_idx = split_dict["global"]["train_idx"]
-        val_idx = split_dict["global"]["val_idx"]
+    split_dict = create_and_save_domain_splits(
+        labels=label_indices, meta=meta_final,
+        experiment_dir=experiment_dir,
+        val_size=0.1, test_size=0.2, seed=seed,
+    )
+    train_idx = split_dict["global"]["train_idx"]
+    val_idx = split_dict["global"]["val_idx"]
 
     # ===============================
     # PREPARE TRAIN AMR
@@ -563,4 +361,5 @@ def prepare_data(domains, experiment_dir, target_domain=None, n_target_samples=N
         "antibiotics": antibiotics_names,
         "num_domains": num_domains,
         "domain_map": domain_map,
+        "test_species_encoded": label_indices[test_idx]
     }

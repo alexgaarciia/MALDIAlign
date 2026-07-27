@@ -12,7 +12,6 @@ data:
   test_size: 0.2
   batch_size: 256
   use_species_weights: False
-  use_year_domains: false
 
 model:
   type: vae_multidecoder_prior_amr_head_zemb
