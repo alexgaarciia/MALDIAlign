@@ -30,6 +30,19 @@ class MultiVAE_Bernoulli(nn.Module):
     def reparameterize(self, mu, logvar):
         """
         Reparameterization trick to sample z ~ q(z | x).
+
+        Parameters
+        ----------
+        mu : torch.Tensor
+            Mean of q(z | x).
+        logvar : torch.Tensor
+            Log-variance of q(z | x).
+
+        Returns
+        -------
+        torch.Tensor
+            Sampled latent representation z = mu + eps * std, with
+            eps ~ N(0, I).
         """
         std = torch.exp(0.5 * logvar)
         eps = torch.randn_like(std)
@@ -42,9 +55,10 @@ class MultiVAE_Bernoulli(nn.Module):
         Parameters
         ----------
         x : torch.Tensor
-            Input data.
+            Input data, shape (batch_size, input_dim).
         domain_id : torch.Tensor
-            Domain identifiers selecting the decoder.
+            Domain identifiers selecting the decoder for each sample,
+            shape (batch_size,).
 
         Returns
         -------
@@ -54,6 +68,10 @@ class MultiVAE_Bernoulli(nn.Module):
             Log-variance of q(z | x).
         z : torch.Tensor
             Sampled latent representation.
+        amr_logits : torch.Tensor or None
+            AMR prediction logits obtained by running `z` through
+            `self.amr_heads`, one per head, concatenated along dim=1.
+            None if the model has no `amr_heads` attribute attached.
         """
         mu, logvar = self.encoder(x)
         z = self.reparameterize(mu, logvar)
@@ -64,17 +82,49 @@ class MultiVAE_Bernoulli(nn.Module):
             if mask.any():
                 x_recon[mask] = self.decoder.net[d](z[mask])
         
-        # AMR predicion
         amr_logits = None
         if hasattr(self, "amr_heads"):
-            h = self.amr_trunk(z)
-            amr_logits = torch.cat([head(h) for head in self.amr_heads], dim=1)
+            amr_logits = torch.cat([head(z) for head in self.amr_heads], dim=1)
 
         return mu, logvar, z, amr_logits
 
     def elbo_loss(self, x, mu, logvar, z, domain_id, species_id=None, species_weights=None, beta=1.0):
         """
-        Computes the ELBO loss with optional species-dependent weighting.
+        Computes the (negative) ELBO loss with optional species-dependent weighting.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data.
+        mu : torch.Tensor
+            Mean of q(z | x), as returned by `forward`.
+        logvar : torch.Tensor
+            Log-variance of q(z | x), as returned by `forward`.
+        z : torch.Tensor
+            Sampled latent representation, as returned by `forward`.
+        domain_id : torch.Tensor
+            Domain identifiers selecting the decoder used for the
+            reconstruction term.
+        species_id : torch.Tensor, optional
+            Per-sample species identifiers used to index into
+            `species_weights`. If None, no per-species weighting is applied.
+        species_weights : torch.Tensor, optional
+            Per-species loss weights, indexed by `species_id`. Ignored if
+            `species_id` is None.
+        beta : float, default=1.0
+            Weight applied to the KL divergence term (beta-VAE annealing).
+
+        Returns
+        -------
+        loss : torch.Tensor
+            Mean negative ELBO (NLL) over the batch, optionally weighted
+            by species.
+        recon_loss : torch.Tensor
+            Mean reconstruction loss (negative log-likelihood) over the
+            batch.
+        kl_loss : torch.Tensor
+            Mean KL divergence between q(z | x) and the prior over the
+            batch.
         """
         RE = self.decoder.log_prob(x, z, domain_id)
         KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
@@ -89,20 +139,41 @@ class MultiVAE_Bernoulli(nn.Module):
 
 class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
     """
-    Extended MultiVAE including optimizer, training and validation loops,
-    KL annealing, early stopping, and loss tracking.
+    MultiVAE_Bernoulli extended with a training loop.
+
+    Adds an Adam optimizer, KL-annealing, early stopping on validation
+    loss, and per-epoch training/validation metric tracking on top of
+    the base MultiVAE_Bernoulli model.
     """
 
     def __init__(self, input_dim, latent_dim, num_domains, epochs=100, lr=1e-4, annealing_epochs=50, patience=20):
+        """
+        Parameters
+        ----------
+        input_dim : int
+            Dimensionality of the input data x.
+        latent_dim : int
+            Dimensionality of the latent space z.
+        num_domains : int
+            Number of domains (one decoder per domain).
+        epochs : int, default=100
+            Maximum number of training epochs.
+        lr : float, default=1e-4
+            Learning rate for the Adam optimizer.
+        annealing_epochs : int or None, default=50
+            Number of epochs over which beta is linearly annealed up to
+            0.1. If None, beta is fixed at 1.0 (no annealing).
+        patience : int, default=20
+            Number of epochs without validation-loss improvement before
+            early stopping is triggered.
+        """
         super().__init__(input_dim, latent_dim, num_domains)
         self.epochs = epochs
         self.lr = lr
         self.annealing_epochs = annealing_epochs
         self.patience = patience
 
-        self.optimizer = optim.Adam(
-            self.parameters(), lr=self.lr, weight_decay=1e-5
-        )
+        self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
 
         self.loss_during_training = []
         self.reconstruc_during_training = []
@@ -110,9 +181,36 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
 
     def trainloop(self, trainloader, validloader, device, species_weights=None):
         """
-        Training loop with validation, KL annealing and early stopping.
+        Trains the model with beta-annealing and early stopping.
 
-        Supports both (x, domain_id) and (x, domain_id, species_id) batches.
+        Runs up to `self.epochs` epochs, evaluating on `validloader` after
+        each one. Beta is linearly annealed (if `self.annealing_epochs`
+        is set) and the model reverts to the best-validation-loss weights
+        found if early stopping triggers before the last epoch. Per-epoch
+        (train, val) tuples for total loss, reconstruction loss, and KL
+        are appended to `self.loss_during_training`,
+        `self.reconstruc_during_training`, and `self.KL_during_training`
+        respectively.
+
+        Parameters
+        ----------
+        trainloader : torch.utils.data.DataLoader
+            Yields batches of either (x, domain_id) or
+            (x, domain_id, species_id).
+        validloader : torch.utils.data.DataLoader
+            Same batch format as `trainloader`, used for validation and
+            early stopping.
+        device : torch.device or str
+            Device to move the model and batches to.
+        species_weights : torch.Tensor, optional
+            Per-species loss weights indexed by species_id, passed to
+            `elbo_loss`. Ignored if batches don't include species_id.
+
+        Returns
+        -------
+        None
+            The model is updated in place; on early stopping it is
+            reloaded with the best validation-loss weights found.
         """
         self.to(device)
         species_weight_tensor = species_weights.to(device) if species_weights is not None else None
@@ -145,7 +243,7 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
                     species_id = species_id.to(device)
 
                 self.optimizer.zero_grad()
-                mu, logvar, z = self.forward(x, domain_id)
+                mu, logvar, z, _ = self.forward(x, domain_id)
                 loss, recon, kl = self.elbo_loss(
                     x, mu, logvar, z,
                     domain_id,
@@ -182,7 +280,7 @@ class MultiVAE_Bernoulli_Extended(MultiVAE_Bernoulli):
                     if species_id is not None:
                         species_id = species_id.to(device)
 
-                    mu, logvar, z = self.forward(x, domain_id)
+                    mu, logvar, z, _ = self.forward(x, domain_id)
                     loss, recon, kl = self.elbo_loss(
                         x, mu, logvar, z,
                         domain_id,
