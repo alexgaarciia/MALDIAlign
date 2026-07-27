@@ -38,3 +38,4 @@ experiments/finetuning/amr/run_finetuning_grid_AMR_MSUMG_klebsiella.py
 experiments/finetuning/amr/run_finetuning_grid_AMR_MSUMG_staphy.py
 experiments/results/vae_multidecoder_prior_multiamr_all_species_all_abs/20260721_091354
 experiments/results/vae_multidecoder_prior_multiamr_all_species_all_abs/20260720_194229
+exploration/
