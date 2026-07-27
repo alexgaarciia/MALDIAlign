@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import pandas as pd
 
-from sklearn.metrics import roc_auc_score, average_precision_score
+from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score
 
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -91,7 +91,6 @@ def eval_model(model, dataloader, device, use_domain=False):
 
     return np.concatenate(mus_all, axis=0)
 
-
 def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, prior_samples=None, prior_labels=None, antibiotics_list=None, target_domain_name=None):
     """
     Executes a t-SNE visualization suite on latent representations.
@@ -158,7 +157,6 @@ def run_tsne_evaluation(mus_all, label_final, meta_final, output_dir, prefix, pr
                     plot_tsne_amr_split_by_hospital(df_all, atb, target_domain_name, save=True, path=out_path_split)
     else:
         print("No AMR data provided. Skipping AMR t-SNE plots.")
-
 
 def encode_latent(model, X, device, domain=None, amr=None, batch_size=256):
     """
@@ -243,7 +241,6 @@ def encode_latent(model, X, device, domain=None, amr=None, batch_size=256):
 
     return np.vstack(Z)
 
-
 def make_loader(X, y, batch_size=256, shuffle=False):
     """
     Converts numpy arrays into a standard PyTorch DataLoader.
@@ -264,7 +261,6 @@ def make_loader(X, y, batch_size=256, shuffle=False):
         batch_size=batch_size,
         shuffle=shuffle
     )
-
 
 def load_model(model, path):
     """
@@ -287,15 +283,18 @@ def load_model(model, path):
     model.eval()
     return model
 
-
-def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512):
+def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512, species=None, n_species=None):
+    """
+    Evaluates AMR prediction heads of a trained VAE model.
+    Returns per-antibiotic AUROC, balanced accuracy (threshold=0.5), PR-AUC and n.
+    """
     model.eval()
     X_tensor = torch.tensor(X, dtype=torch.float32)
     all_logits = []
 
     with torch.no_grad():
         for i in range(0, len(X_tensor), batch_size):
-            batch = X_tensor[i : i + batch_size].to(device)
+            batch = X_tensor[i:i + batch_size].to(device)
             mu, _ = model.encoder(batch)
 
             if hasattr(model, "amr_trunk"):
@@ -304,6 +303,21 @@ def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512):
                 h = model.amr_drop(mu)
             else:
                 h = mu
+
+            if species is not None:
+                sp_batch = torch.tensor(
+                    species[i:i + batch_size], dtype=torch.long, device=device
+                )
+                if hasattr(model, "species_emb"):
+                    u_s = model.species_emb(sp_batch)
+                    h = torch.cat([h, u_s], dim=1)
+                elif n_species is not None:
+                    head_input_dim = model.amr_heads[0].in_features
+                    if head_input_dim > h.shape[1]:
+                        u_s = torch.nn.functional.one_hot(
+                            sp_batch, num_classes=n_species
+                        ).float()
+                        h = torch.cat([h, u_s], dim=1)
 
             amr_logits = torch.cat([head(h) for head in model.amr_heads], dim=1)
             all_logits.append(amr_logits.cpu())
@@ -316,12 +330,16 @@ def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512):
         y_true = amr_labels[:, j]
         valid  = ~np.isnan(y_true)
         y_true_clean = y_true[valid].astype(int)
-        y_prob = probs[valid, j]
+        y_prob       = probs[valid, j]
+        y_pred       = (y_prob >= 0.5).astype(int)
+
         if len(y_true_clean) < 10 or len(np.unique(y_true_clean)) < 2:
             continue
+
         results[atb_name] = {
-            "auc":    roc_auc_score(y_true_clean, y_prob),
-            "pr_auc": average_precision_score(y_true_clean, y_prob),
-            "n":      int(valid.sum()),
+            "auc":      roc_auc_score(y_true_clean, y_prob),
+            "bal_acc":  balanced_accuracy_score(y_true_clean, y_pred),
+            "pr_auc":   average_precision_score(y_true_clean, y_prob),
+            "n":        int(valid.sum()),
         }
     return results
