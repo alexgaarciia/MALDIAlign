@@ -188,84 +188,76 @@ def plot_tsne_global(tsne_df, per_species=False, overlay_per_hospital=False, ove
     if not per_species and not overlay_per_hospital and not overlay_per_year:
         plt.figure(figsize=(15, 10))
         ax = plt.gca()
-
         for i, sp in enumerate(species_list):
             subset_real = df[(df["species"] == sp) & (df["source"] == "real")]
             subset_prior = df[(df["species"] == sp) & (df["source"] == "prior")]
-
             # Muestras reales
             ax.scatter(
                 subset_real["x"],
                 subset_real["y"],
                 s=10,
                 alpha=0.25,
-                color=colors[i], # Comma corregida aquí
+                color=colors[i],
                 label=sp
             )
-
             # Muestras del Prior (Estrellas)
             plot_prior_star(ax, subset_prior, i, label="Prior samples" if i == 0 else None)
-
         # 4. Pintar los errores encima de todo
         if mis_points is not None:
             plot_misclassified(ax, mis_points)
-
         plt.title("t-SNE Projection of the Latent Space", fontsize=15)
         plt.xlabel("t-SNE 1")
         plt.ylabel("t-SNE 2")
-
-        # 5. LEYENDA DE ESPECIES (A la derecha, fuera del plot)
+        # 5. LEYENDA DE ESPECIES (dentro, arriba a la derecha)
         species_handles = [
             Line2D([0], [0], marker='o', color='w', label=sp,
                    markerfacecolor=colors[i], markersize=8)
             for i, sp in enumerate(species_list)
         ]
-
         leg_species = ax.legend(
             handles=species_handles,
             title="Species",
-            loc="center left",
-            bbox_to_anchor=(1.02, 0.5), 
+            loc="upper right",
             frameon=True,
-            fontsize=9
+            fontsize=12
         )
         ax.add_artist(leg_species)
-
-        # 6. LEYENDA DE MARCADORES (Tipo de punto)
+        # 6. LEYENDA DE MARCADORES (Tipo de punto) — debajo de la de Species
         has_prior = (df["source"] == "prior").any()
         has_misclassified = mis_points is not None
-        
-        marker_handles = []
 
+        marker_handles = []
         # Si hay estrellas o hay fallos, entonces explicamos qué es cada cosa
         if has_prior or has_misclassified:
             marker_handles.append(
                 Line2D([0], [0], marker='o', color='k', linestyle='None', markersize=6, label="Real samples")
             )
-            
+
             if has_prior:
                 marker_handles.append(
                     Line2D([0], [0], marker='*', color='k', linestyle='None', markersize=12, label="Prior samples")
                 )
-
             if has_misclassified:
                 marker_handles.append(
                     Line2D([0], [0], marker='x', color='purple', linestyle='None', markersize=8, label="Misclassified")
                 )
 
+            # Altura aproximada ocupada por la leyenda de Species (en coords de ejes)
+            n_sp_rows = len(species_list) + (1 if has_prior else 0)
+            y_offset = max(0.45, 1.0 - 0.04 * n_sp_rows)
+
             # Solo llamamos a ax.legend si la lista no está vacía
             ax.legend(
-                handles=marker_handles, 
-                title="Marker type", 
-                loc="upper right", 
-                frameon=True, 
+                handles=marker_handles,
+                title="Marker type",
+                loc="upper right",
+                bbox_to_anchor=(1.0, y_offset),
+                frameon=True,
                 fontsize=8
             )
-
-        # Ajuste de layout para que no se corte la leyenda lateral
-        plt.tight_layout(rect=[0, 0, 0.82, 1])
-
+        plt.tight_layout()
         handle_save_show(save, path)
+
 
     # ============================================================
     # 2) PER-SPECIES VIEW — COLORED BY HOSPITAL
