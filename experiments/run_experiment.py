@@ -10,14 +10,12 @@ PROJECT_NAME = "MALDIAlign"
 
 cwd = Path().resolve()
 
-# Walk upwards until we find the project folder
 target = None
 for parent in [cwd] + list(cwd.parents):
     if parent.name == PROJECT_NAME:
         target = parent
         break
 
-# If the project folder is found and we are not already there, then change cwd
 if target is not None and target != cwd:
     os.chdir(target)
 
@@ -135,7 +133,7 @@ def main():
     print("Training metrics saved")
 
     # AMR test evaluation
-    if antibiotics_list is not None:
+    if antibiotics_list is not None and hasattr(model, "amr_heads"):
         print("\n===== AMR evaluation on test set =====")
         amr_results = evaluate_amr_head(
             trained_model,
@@ -143,6 +141,8 @@ def main():
             data["amr_test"],
             antibiotics_list,
             device,
+            species=data.get("test_species_encoded"),
+            n_species=cfg["model"].get("n_species"),
         )
         print(f"\n{'Antibiotic':<30} {'AUC':>8} {'PR-AUC':>8} {'N':>6}")
         print("-" * 56)
