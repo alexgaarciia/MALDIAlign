@@ -306,13 +306,66 @@ Available `--architecture` choices: `vae`, `vae_prior`, `vae_multidecoder`, `vae
 
 ### 9.2 AMR Prediction (zero-shot & few-shot)
 
-Uses the auxiliary AMR head. Evaluated on *Klebsiella pneumoniae* across five antibiotics (Imipenem, Meropenem, Ceftazidime, Ciprofloxacin, Piperacillin-Tazobactam).
+Uses the auxiliary AMR head. The paper evaluates *Klebsiella pneumoniae* across five clinically relevant antibiotics (Imipenem, Meropenem, Ceftazidime, Ciprofloxacin, Piperacillin-Tazobactam), the ones with confirmed proteomic biomarkers in the MALDI-TOF detection range.
 
 ```bash
 python experiments/amr/run_classification_mlp.py
 ```
 
 Few-shot adaptation grids (progressively adding labeled target isolates) live under [experiments/finetuning/](experiments/finetuning/).
+
+#### Predicting AMR for a species–antibiotic pair
+
+The shipped AMR checkpoint has **one head per antibiotic** (`model.amr_heads[j]`), each taking the latent `z* = μ(x)` and producing a single resistance logit. The head index `j` follows the training `antibiotics_filter` order:
+
+| j | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Antibiotic | Imipenem | Meropenem | Ceftazidime | Ciprofloxacin | Piperacillin-Tazobactam | Amikacin | Oxacillin | Clindamycin | Erythromycin | Vancomycin |
+
+For *K. pneumoniae*, the first five (indices 0–4) are the clinically relevant ones reported in the paper. To predict resistance for a given species–antibiotic pair, feed spectra of that species and read the corresponding head:
+
+```python
+import numpy as np
+import torch
+from src.evaluation.eval import load_model
+from models.deep.MultiVAEPriorAMRHeadZ import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+ANTIBIOTICS = ["Imipenem", "Meropenem", "Ceftazidime", "Ciprofloxacin",
+               "Piperacillin-Tazobactam", "Amikacin", "Oxacillin",
+               "Clindamycin", "Erythromycin", "Vancomycin"]
+
+CHECKPOINT = "experiments/results/vae_multidecoder_prior_multiamr_all_species_all_abs/20260716_150449/model.pth"
+model = load_model(
+    MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(
+        input_dim=6000, latent_dim=128, num_domains=4, n_species=6, n_antibiotics=10),
+    CHECKPOINT,
+)
+model.eval().to(device)
+
+# X_kpn: (N, 6000) Klebsiella pneumoniae spectra, preprocessed + row-minmax normalized
+antibiotic = "Meropenem"
+j = ANTIBIOTICS.index(antibiotic)
+
+with torch.no_grad():
+    x = torch.tensor(X_kpn, dtype=torch.float32, device=device)
+    mu, _ = model.encoder(x)                    # z* = μ(x)
+    logit = model.amr_heads[j](mu).squeeze(1)   # head for antibiotic j
+    prob_resistant = torch.sigmoid(logit).cpu().numpy()
+
+pred = (prob_resistant >= 0.5).astype(int)      # 1 = resistant, 0 = susceptible
+```
+
+If you already have ground-truth labels and just want the metrics (AUROC, PR-AUC, balanced accuracy), use the ready-made helper — it reports every antibiotic with ≥10 labeled samples and both classes present:
+
+```python
+from src.evaluation.eval import evaluate_amr_head
+
+# amr_labels: (N, 10) array with {0, 1, NaN}
+results = evaluate_amr_head(model, X_kpn, amr_labels, ANTIBIOTICS, device)
+print(results["Meropenem"])   # {'auc': ..., 'bal_acc': ..., 'pr_auc': ..., 'n': ...}
+```
 
 ### 9.3 Novelty / OOD Detection (selective prediction)
 
