@@ -412,13 +412,14 @@ The datasets are publicly available from their original sources (DRIAMS, MARISMa
 If you use this code or DALMA in your research, please cite:
 
 ```bibtex
-@article{garcianavarro_dalma,
-  title   = {Biologically Informed Representation Learning for Robust Cross-Center
-             Generalization of MALDI-TOF Mass Spectrometry},
-  author  = {Garc{\'i}a-Navarro, Alejandro L. and Sevilla-Salcedo, Carlos and
-             Rodr{\'i}guez-S{\'a}nchez, Bel{\'e}n and G{\'o}mez-Verdejo, Vanessa},
-  note    = {Under review},
-  year    = {2026}
+@misc{garcíanavarro2026biologicallyinformedrepresentationlearning,
+      title={Biologically Informed Representation Learning for Robust Cross-Center Generalization of MALDI-TOF Mass Spectrometry}, 
+      author={Alejandro L. García-Navarro and Carlos Sevilla-Salcedo and Belén Rodríguez-Sánchez and Vanessa Gómez-Verdejo},
+      year={2026},
+      eprint={2608.08182},
+      archivePrefix={arXiv},
+      primaryClass={cs.LG},
+      url={https://arxiv.org/abs/2608.08182}, 
 }
 ```
 
