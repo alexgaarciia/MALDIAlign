@@ -32,7 +32,7 @@ MAX_EPS = 0.05
 # DATA LOADING
 # ============================================================
 if not PLOT_FGSM:
-    df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260921_063738/adversarial_robustness_adv.csv")
+    df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260921_092740/adversarial_robustness_adv_pgd.csv")
 else:
     df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260718_103659/adversarial_robustness_adv.csv")
 

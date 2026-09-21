@@ -1,0 +1,63 @@
+model,attack,epsilon,balanced_accuracy
+MLP raw (adversarial),Clean,0.0,0.8700378356817965
+MLP raw (adversarial),FGSM,0.005,0.8579171413408128
+MLP raw (adversarial),PGD-10,0.005,0.8577358374906741
+MLP raw (adversarial),PGD-40,0.005,0.8575923080529579
+MLP raw (adversarial),FGSM,0.01,0.8488904790977786
+MLP raw (adversarial),PGD-10,0.01,0.8467768574884734
+MLP raw (adversarial),PGD-40,0.01,0.8467542304192449
+MLP raw (adversarial),FGSM,0.015,0.8339029013200268
+MLP raw (adversarial),PGD-10,0.015,0.8262264801625560
+MLP raw (adversarial),PGD-40,0.015,0.8239828175097528
+MLP raw (adversarial),FGSM,0.02,0.8117840533230645
+MLP raw (adversarial),PGD-10,0.02,0.7892524937848218
+MLP raw (adversarial),PGD-40,0.02,0.7845309803758662
+MLP raw (adversarial),FGSM,0.025,0.7795254425053532
+MLP raw (adversarial),PGD-10,0.025,0.7353598121484913
+MLP raw (adversarial),PGD-40,0.025,0.7240124713433997
+MLP raw (adversarial),FGSM,0.03,0.7396107649483741
+MLP raw (adversarial),PGD-10,0.03,0.6586947026957318
+MLP raw (adversarial),PGD-40,0.03,0.6342451726484910
+MLP raw (adversarial),FGSM,0.04,0.6306497207011247
+MLP raw (adversarial),PGD-10,0.04,0.4594825861094771
+MLP raw (adversarial),PGD-40,0.04,0.4072455713895572
+MLP raw (adversarial),FGSM,0.05,0.4882093127401894
+MLP raw (adversarial),PGD-10,0.05,0.2908949601626175
+MLP raw (adversarial),PGD-40,0.05,0.2340484983171547
+MLP raw (adversarial),FGSM,0.075,0.2010155685432734
+MLP raw (adversarial),PGD-10,0.075,0.0441734597126818
+MLP raw (adversarial),PGD-40,0.075,0.0162252487403233
+MLP raw (adversarial),FGSM,0.1,0.0225268955279816
+MLP raw (adversarial),PGD-10,0.1,0.0005962291143026
+MLP raw (adversarial),PGD-40,0.1,0.0000942747704254
+VAE+Probe adv / probe adv,Clean,0.0,0.9509844166471974
+VAE+Probe adv / probe adv,FGSM,0.005,0.8916088169923085
+VAE+Probe adv / probe adv,PGD-10,0.005,0.8851269897016585
+VAE+Probe adv / probe adv,PGD-40,0.005,0.8840502425239137
+VAE+Probe adv / probe adv,FGSM,0.01,0.8021926919092733
+VAE+Probe adv / probe adv,PGD-10,0.01,0.7478171791895791
+VAE+Probe adv / probe adv,PGD-40,0.01,0.7387248923067551
+VAE+Probe adv / probe adv,FGSM,0.015,0.7120944661569631
+VAE+Probe adv / probe adv,PGD-10,0.015,0.5487696540020085
+VAE+Probe adv / probe adv,PGD-40,0.015,0.5203874812002101
+VAE+Probe adv / probe adv,FGSM,0.02,0.6413331036435029
+VAE+Probe adv / probe adv,PGD-10,0.02,0.3772189858217028
+VAE+Probe adv / probe adv,PGD-40,0.02,0.3255261476322915
+VAE+Probe adv / probe adv,FGSM,0.025,0.5763470707886965
+VAE+Probe adv / probe adv,PGD-10,0.025,0.19759690822527895
+VAE+Probe adv / probe adv,PGD-40,0.025,0.14892265792947346
+VAE+Probe adv / probe adv,FGSM,0.03,0.49443242194643244
+VAE+Probe adv / probe adv,PGD-10,0.03,0.07179092820862983
+VAE+Probe adv / probe adv,PGD-40,0.03,0.044030326146594835
+VAE+Probe adv / probe adv,FGSM,0.04,0.2769001108765821
+VAE+Probe adv / probe adv,PGD-10,0.04,0.005207523674475232
+VAE+Probe adv / probe adv,PGD-40,0.04,0.001816282556635198
+VAE+Probe adv / probe adv,FGSM,0.05,0.11239496531184633
+VAE+Probe adv / probe adv,PGD-10,0.05,9.938382031405287e-05
+VAE+Probe adv / probe adv,PGD-40,0.05,0.0
+VAE+Probe adv / probe adv,FGSM,0.075,0.011427159290788145
+VAE+Probe adv / probe adv,PGD-10,0.075,0.0
+VAE+Probe adv / probe adv,PGD-40,0.075,0.0
+VAE+Probe adv / probe adv,FGSM,0.1,0.002630041447040666
+VAE+Probe adv / probe adv,PGD-10,0.1,0.0
+VAE+Probe adv / probe adv,PGD-40,0.1,0.0
