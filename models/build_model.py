@@ -6,6 +6,7 @@ from models.deep.MultiVAEPrior import MultiVAE_Bernoulli_SpeciesPrior_Extended
 from models.deep.DANN import DANNFull_Extended
 from models.deep.MultiVAEPriorAMRHeadZ import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ
 from models.deep.MultiVAEPriorAMRHeadZEmb import MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZEmb
+from models.deep.MultiVAEPriorAdv import MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended
 
 
 def build_model(cfg: dict, input_dim: int, antibiotic_names=None, num_domains=None):
@@ -135,7 +136,6 @@ def build_model(cfg: dict, input_dim: int, antibiotic_names=None, num_domains=No
         )
 
     elif model_type == "vae_multidecoder_prior_adv":
-        from models.deep.MultiVAEPriorAdv import MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended
         model = MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended(
             input_dim=input_dim,
             latent_dim=model_cfg["latent_dim"],
@@ -146,6 +146,9 @@ def build_model(cfg: dict, input_dim: int, antibiotic_names=None, num_domains=No
             patience=training_cfg["patience"],
             adv_eps=model_cfg.get("adv_eps", 0.02),
             adv_lambda=model_cfg.get("adv_lambda", 0.5),
+            adv_attack=model_cfg.get("adv_attack", "fgsm"),
+            pgd_steps=model_cfg.get("pgd_steps", 7),
+            pgd_alpha=model_cfg.get("pgd_alpha", None),
         )
 
     else:

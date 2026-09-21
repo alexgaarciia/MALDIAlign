@@ -1,6 +1,5 @@
 import copy
 import torch
-import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
 from models.deep.networks import ConditionalPrior
@@ -133,16 +132,55 @@ class MultiVAE_Bernoulli_SpeciesPrior_Adv(MultiVAE_Bernoulli):
 
         return x_adv.detach()
 
+    def pgd_perturb(self, x, domain_id, species_id, eps, alpha, steps, beta=1.0):
+        """
+        Generates a PGD adversarial perturbation of x against the ELBO loss.
+
+        Iteratively applies FGSM steps of size alpha, projecting back onto
+        the L-inf ball of radius eps around the original input after each step.
+        Initialized from a random point inside the ball (random_start=True).
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data to perturb.
+        domain_id : torch.Tensor
+            Domain identifiers selecting the decoder used to compute the
+            loss whose gradient drives the perturbation.
+        species_id : torch.Tensor
+            Per-sample species identifiers used to condition the prior
+            p(z | species) when computing the loss.
+        eps : float
+            L-inf perturbation budget (radius of the allowed ball).
+        alpha : float
+            Step size per iteration. Typically set to (eps / steps) * 2.
+        steps : int
+            Number of PGD iterations.
+        beta : float, default=1.0
+            Weight applied to the KL divergence term when computing the
+            loss used to generate the perturbation.
+
+        Returns
+        -------
+        torch.Tensor
+            Adversarially perturbed input x_adv, detached from the graph
+            and clamped to [0, 1].
+        """
+        x_adv = x + torch.empty_like(x).uniform_(-eps, eps)
+        x_adv = torch.clamp(x_adv, 0, 1).detach()
+        for _ in range(steps):
+            x_adv.requires_grad_(True)
+            mu, logvar, z = self.forward(x_adv, domain_id)
+            loss, _, _ = self.elbo_loss(x_adv, mu, logvar, z, domain_id=domain_id, species_id=species_id, beta=beta)
+            loss.backward()
+            with torch.no_grad():
+                x_adv = x_adv + alpha * x_adv.grad.sign()
+                delta = torch.clamp(x_adv - x, min=-eps, max=eps)
+                x_adv = torch.clamp(x + delta, 0, 1)
+        return x_adv.detach()
 
 class MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended(MultiVAE_Bernoulli_SpeciesPrior_Adv):
-    """
-    Extended adversarial VAE with optimizer, scheduler, training loop and early stopping.
-
-    Adversarial training mixes clean and FGSM-perturbed spectra:
-        loss = (1 - adv_lambda) * L_clean + adv_lambda * L_adv
-    """
-
-    def __init__(self, input_dim, latent_dim, num_domains, n_species, epochs=100, lr=1e-4, annealing_epochs=50, patience=20, adv_eps=0.02, adv_lambda=0.5):
+    def __init__(self, input_dim, latent_dim, num_domains, n_species, epochs=100, lr=1e-4, annealing_epochs=50, patience=20, adv_eps=0.02, adv_lambda=0.5, adv_attack="fgsm", pgd_steps=7, pgd_alpha=None):
         """
         Parameters
         ----------
@@ -151,39 +189,75 @@ class MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended(MultiVAE_Bernoulli_SpeciesPri
         latent_dim : int
             Dimensionality of the latent space z.
         num_domains : int
-            Number of domains (one decoder per domain).
+            Number of acquisition domains (one decoder per domain).
         n_species : int
             Number of species (conditions the latent prior).
         epochs : int, default=100
             Maximum number of training epochs.
         lr : float, default=1e-4
             Learning rate for the Adam optimizer.
-        annealing_epochs : int or None, default=50
-            Unused by `trainloop` (beta is fixed at 1.0), kept for
-            interface compatibility with the base class.
+        annealing_epochs : int, default=50
+            Unused by trainloop (beta is fixed at 1.0); kept for interface
+            compatibility with the base class.
         patience : int, default=20
             Number of epochs without validation-loss improvement before
             early stopping is triggered.
         adv_eps : float, default=0.02
-            L-inf perturbation budget for FGSM (in row-minmax normalized
-            space). Typical values: 0.01 - 0.05.
+            L-inf perturbation budget in row-minmax normalized space [0, 1].
         adv_lambda : float, default=0.5
             Mixing coefficient between clean and adversarial loss.
             0.0 = standard training, 1.0 = fully adversarial.
+        adv_attack : str, default="fgsm"
+            Attack used to generate perturbations during training.
+            One of "fgsm" or "pgd".
+        pgd_steps : int, default=7
+            Number of PGD iterations per batch. Only used when adv_attack="pgd".
+        pgd_alpha : float or None, default=None
+            PGD step size per iteration. If None, set to (adv_eps / pgd_steps) * 2.
+            Only used when adv_attack="pgd".
         """
         super().__init__(input_dim, latent_dim, num_domains, n_species)
-        self.epochs          = epochs
-        self.lr              = lr
+        self.epochs = epochs
+        self.lr = lr
         self.annealing_epochs = annealing_epochs
-        self.patience        = patience
-        self.adv_eps         = adv_eps
-        self.adv_lambda      = adv_lambda
+        self.patience = patience
+        self.adv_eps = adv_eps
+        self.adv_lambda = adv_lambda
+        self.adv_attack = adv_attack  
+        self.pgd_steps = pgd_steps
+        self.pgd_alpha = pgd_alpha if pgd_alpha is not None else (adv_eps / pgd_steps) * 2
 
         self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-5)
 
         self.loss_during_training    = []
         self.reconstruc_during_training = []
         self.KL_during_training      = []
+        
+    def _perturb(self, x, domain_id, species_id, beta):
+        """
+        Generates an adversarial perturbation of x using the configured attack.
+
+        Dispatches to fgsm_perturb or pgd_perturb depending on self.adv_attack.
+
+        Parameters
+        ----------
+        x : torch.Tensor
+            Input data to perturb.
+        domain_id : torch.Tensor
+            Domain identifiers selecting the decoder for the ELBO loss.
+        species_id : torch.Tensor
+            Per-sample species identifiers for the conditional prior.
+        beta : float
+            Weight applied to the KL divergence term in the ELBO loss.
+
+        Returns
+        -------
+        torch.Tensor
+            Adversarially perturbed input, detached and clamped to [0, 1].
+        """
+        if self.adv_attack == "pgd":
+            return self.pgd_perturb(x, domain_id, species_id, eps=self.adv_eps, alpha=self.pgd_alpha, steps=self.pgd_steps, beta=beta)
+        return self.fgsm_perturb(x, domain_id, species_id, eps=self.adv_eps, beta=beta)
 
     def trainloop(self, trainloader, validloader, device):
         """
@@ -242,7 +316,7 @@ class MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended(MultiVAE_Bernoulli_SpeciesPri
                 mu, logvar, z      = self.forward(x, domain_id)
                 loss_clean, recon, kl = self.elbo_loss(x, mu, logvar, z, domain_id=domain_id, species_id=species_id, beta=beta)
 
-                x_adv = self.fgsm_perturb(x, domain_id, species_id, eps=self.adv_eps, beta=beta)
+                x_adv = self._perturb(x, domain_id, species_id, beta=beta)
 
                 mu_adv, logvar_adv, z_adv = self.forward(x_adv, domain_id)
                 loss_adv, _, _ = self.elbo_loss(x_adv, mu_adv, logvar_adv, z_adv, domain_id=domain_id, species_id=species_id, beta=beta)
