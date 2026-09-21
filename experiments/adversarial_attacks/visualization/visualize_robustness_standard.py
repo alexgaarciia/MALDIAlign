@@ -23,11 +23,14 @@ import matplotlib.pyplot as plt
 
 
 # ============================================================
-# PLOT
+# DATA LOADING
 # ============================================================
 df_adv = pd.read_csv("/Users/agnavarr/Downloads/MALDIAlign_final/experiments/adversarial_attacks/results/20260706_121949/adversarial_robustness.csv")
 df_adv = df_adv[df_adv["epsilon"] <= 0.05]
 
+# ============================================================
+# PLOT
+# ============================================================
 attacks_to_plot = ["Clean", "FGSM", "PGD-10", "PGD-40"]
 colors    = {"MLP raw": "#2c7bb6", "VAE+Probe": "#d7191c"}
 linestyle = {"Clean": "-", "FGSM": "--", "PGD-10": "-.", "PGD-40": ":"}
@@ -45,14 +48,7 @@ for model_name in model_names:
         sub2 = sub[sub["attack"] == attack].sort_values("epsilon")
         if sub2.empty:
             continue
-        ax.plot(
-            sub2["epsilon"], sub2["balanced_accuracy"],
-            color=colors.get(model_name, "black"),
-            linestyle=linestyle.get(attack, "-"),
-            marker=markers.get(attack, "o"),
-            markersize=5,
-            label=f"{model_name} — {attack}",
-        )
+        ax.plot(sub2["epsilon"], sub2["balanced_accuracy"], color=colors.get(model_name, "black"), linestyle=linestyle.get(attack, "-"), marker=markers.get(attack, "o"), markersize=5, label=f"{model_name} — {attack}")
 
 ax.set_xlabel("ε", fontsize=11)
 ax.set_ylabel("Balanced Accuracy", fontsize=11)
@@ -62,11 +58,7 @@ ax.grid(alpha=0.3)
 ax.set_xticks(df_adv["epsilon"].unique())
 ax.set_xticklabels([str(e) for e in sorted(df_adv["epsilon"].unique())], rotation=45, ha="right", fontsize=8)
 
-plt.suptitle(
-    "Adversarial Robustness — MS-UMG OOD",
-    fontsize=13, fontweight="bold"
-)
+plt.suptitle("Adversarial Robustness — MS-UMG OOD", fontsize=13, fontweight="bold")
 plt.tight_layout()
-plt.savefig("/Users/agnavarr/Downloads/MALDIAlign_final/experiments/adversarial_attacks/results/20260706_121949/adversarial_robustness_curve.png",
-            dpi=150, bbox_inches="tight")
+plt.savefig("/Users/agnavarr/Downloads/MALDIAlign_final/experiments/adversarial_attacks/results/20260706_121949/adversarial_robustness_curve.png", dpi=150, bbox_inches="tight")
 plt.close()

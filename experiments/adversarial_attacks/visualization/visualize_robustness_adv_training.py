@@ -1,17 +1,22 @@
+# ============================================================
+# IMPORTS
+# ============================================================
 import pandas as pd
 import matplotlib.pyplot as plt
 
-# Path to the new CSV
-df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260718_103659/adversarial_robustness_adv.csv")
 
-# Filter up to ε=0.05 only
+# ============================================================
+# DATA LOADING
+# ============================================================
+df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260921_063738/adversarial_robustness_adv.csv")
 df_adv = df_adv[df_adv["epsilon"] <= 0.05]
 
+
+# ============================================================
+# PLOT
+# ============================================================
 attacks_to_plot = ["Clean", "FGSM", "PGD-10", "PGD-40"]
-
-# Colors and styles
 colors = {"MLP raw (adversarial)": "#2c7bb6", "VAE+Probe adv / probe adv": "#d7191c"}
-
 linestyle = {"Clean": "-", "FGSM": "--", "PGD-10": "-.", "PGD-40": ":"}
 markers = {"Clean": "o", "FGSM": "s", "PGD-10": "^", "PGD-40": "D"}
 
@@ -34,5 +39,5 @@ ax.grid(alpha=0.35)
 plt.title("Adversarial Robustness — MS-UMG OOD\n(Models trained with Adversarial Training)", fontsize=13, fontweight="bold", pad=20)
 
 plt.tight_layout()
-plt.savefig("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260718_103659/adversarial_robustness_adv_curve.png", dpi=200, bbox_inches="tight")
+plt.savefig("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260921_063738/adversarial_robustness_curve.png", dpi=150, bbox_inches="tight")
 plt.show()

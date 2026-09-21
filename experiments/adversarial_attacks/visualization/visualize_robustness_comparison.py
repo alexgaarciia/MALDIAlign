@@ -1,10 +1,15 @@
+# ============================================================
+# IMPORTS
+# ============================================================
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.lines as mlines
 
-df_std = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260706_121949/adversarial_robustness.csv")
-df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260718_103659/adversarial_robustness_adv.csv")
-df_all = pd.concat([df_std, df_adv], ignore_index=True)
+
+# ============================================================
+# CONFIG
+# ============================================================
+PLOT_FGSM = True
 
 MODEL_STYLES = {
     "MLP raw":                   {"color": "#2563EB", "ls": "-",  "marker": "o", "lw": 2.0, "label": "MLP raw (standard)"},
@@ -22,9 +27,29 @@ ATTACK_TITLES = {
 
 MAX_EPS = 0.05
 
-fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
-fig.suptitle("Adversarial Robustness on MS-UMG (OOD)", fontsize=13, fontweight="bold", y=1.02)
 
+# ============================================================
+# DATA LOADING
+# ============================================================
+if not PLOT_FGSM:
+    df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260921_063738/adversarial_robustness_adv.csv")
+else:
+    df_adv = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260718_103659/adversarial_robustness_adv.csv")
+
+df_std = pd.read_csv("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/20260706_121949/adversarial_robustness.csv")
+df_all = pd.concat([df_std, df_adv], ignore_index=True)
+
+
+
+# ============================================================
+# PLOTS
+# ============================================================
+fig, axes = plt.subplots(1, 3, figsize=(15, 5), sharey=True)
+if PLOT_FGSM:
+    fig.suptitle("Adversarial Robustness on MS-UMG (OOD)\nAdv. training: ε=0.02, λ=0.5, FGSM", fontsize=11, fontweight="bold", y=1.04)
+else:
+    fig.suptitle("Adversarial Robustness on MS-UMG (OOD)\nAdv. training: ε=0.05, λ=0.5, PGD-10", fontsize=11, fontweight="bold", y=1.04)
+    
 for ax, attack in zip(axes, ATTACKS):
     sub = df_all[(df_all["attack"] == attack) & (df_all["epsilon"] <= MAX_EPS)]
 
@@ -68,15 +93,13 @@ handles.append(mlines.Line2D(
     label="Clean accuracy (●)",
 ))
 
-fig.legend(
-    handles=handles,
-    loc="upper center",
-    ncol=3,
-    bbox_to_anchor=(0.5, 0.95),
-    fontsize=8,
-    frameon=True,
-)
+fig.legend(handles=handles, loc="upper center", ncol=3, bbox_to_anchor=(0.5, 0.95), fontsize=8, frameon=True)
 
 plt.tight_layout(rect=[0, 0, 1, 0.88])
-plt.savefig("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/adversarial_robustness_comparison.png", dpi=150, bbox_inches="tight")
+
+if PLOT_FGSM:
+    plt.savefig("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/adversarial_robustness_comparison_fgsm.png", dpi=150, bbox_inches="tight")
+else:
+    plt.savefig("/export/usuarios01/agnavarr/MALDIAlign/experiments/adversarial_attacks/results/adversarial_robustness_comparison_pgd.png", dpi=150, bbox_inches="tight")
+
 plt.show()

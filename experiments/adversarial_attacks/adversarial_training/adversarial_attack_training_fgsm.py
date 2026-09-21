@@ -18,19 +18,22 @@ print("Working directory:", os.getcwd())
 # ============================================================
 # IMPORTS
 # ============================================================
-import copy
 import pickle
 import numpy as np
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+
 from datetime import datetime
+
 from sklearn.preprocessing import LabelEncoder
+
 from src.config.loader import load_config
 from src.data.datasets import *
 from src.data.preprocessing import *
 from src.evaluation.eval import load_model, make_loader
 from src.evaluation.adversarial_attacks import *
+
 from models.baselines.mlp import MLPClassifier_Extended
 from models.baselines.mlp_latent import LinearProbe_Extended
 from models.deep.MultiVAEPriorAdv import MultiVAE_Bernoulli_SpeciesPrior_Adv_Extended
@@ -42,11 +45,11 @@ from models.deep.MultiVAEPriorAdv import MultiVAE_Bernoulli_SpeciesPrior_Adv_Ext
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
 PRETRAINED_DALMA_ADV = Path("experiments/results/vae_multidecoder_prior_adv/20260718_094728/model.pth")
-SPLITS_PATH          = Path("experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
+SPLITS_PATH = Path("experiments/results/vae_multidecoder_prior/20260409_100009/data_splits.pkl")
 
 EXPERIMENT_DIR = Path(f"experiments/adversarial_attacks/results/{timestamp}")
 EXPERIMENT_DIR.mkdir(parents=True, exist_ok=True)
-OUT_PATH = EXPERIMENT_DIR / "adversarial_robustness_adv.csv"
+OUT_PATH = EXPERIMENT_DIR / "adversarial_robustness_adv_fgsm.csv"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu")
 print(f"Device: {device}")
@@ -124,127 +127,6 @@ n_classes_pool = len(le_pool.classes_)
 # ============================================================
 # HELPERS
 # ============================================================
-def train_adversarial(model, trainloader, validloader, device,
-                      eps=0.02, adv_lambda=0.5, epochs=50, lr=1e-3, patience=10):
-    optimizer        = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
-    best_val_loss    = float("inf")
-    patience_counter = 0
-    best_state       = None
-    model.to(device)
-
-    for epoch in range(epochs):
-        model.train()
-        tr_loss = 0.0
-        for x, y in trainloader:
-            x, y = x.to(device), y.to(device)
-            optimizer.zero_grad()
-            loss_clean = F.cross_entropy(model(x), y)
-            x_adv = x.clone().detach().requires_grad_(True)
-            F.cross_entropy(model(x_adv), y).backward()
-            with torch.no_grad():
-                x_adv = x + eps * x_adv.grad.sign()
-                x_adv = torch.clamp(x_adv, 0.0, 1.0)
-            x_adv = x_adv.detach()
-            optimizer.zero_grad()
-            loss_adv = F.cross_entropy(model(x_adv), y)
-            loss = (1.0 - adv_lambda) * loss_clean + adv_lambda * loss_adv
-            loss.backward()
-            optimizer.step()
-            tr_loss += loss.item()
-        tr_loss /= len(trainloader)
-
-        model.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for x, y in validloader:
-                x, y = x.to(device), y.to(device)
-                val_loss += F.cross_entropy(model(x), y).item()
-        val_loss /= len(validloader)
-
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch+1}/{epochs} | tr={tr_loss:.4f} | val={val_loss:.4f}")
-
-        if val_loss < best_val_loss:
-            best_val_loss    = val_loss
-            best_state       = copy.deepcopy(model.state_dict())
-            patience_counter = 0
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            print(f"Early stopping at epoch {epoch+1}")
-            break
-
-    if best_state is not None:
-        model.load_state_dict(best_state)
-    return model
-
-def train_probe_adversarial(vae, probe, trainloader, validloader, device, eps=0.02, adv_lambda=0.5, epochs=50, lr=1e-3, patience=10):
-    optimizer        = torch.optim.Adam(probe.parameters(), lr=lr, weight_decay=1e-5)
-    best_val_loss    = float("inf")
-    patience_counter = 0
-    best_state       = None
-
-    vae.to(device).eval()
-    probe.to(device)
-
-    for epoch in range(epochs):
-        probe.train()
-        tr_loss = 0.0
-
-        for x, y in trainloader:
-            x, y = x.to(device), y.to(device)
-
-            with torch.no_grad():
-                mu, _ = vae.encoder(x)
-            optimizer.zero_grad()
-            loss_clean = F.cross_entropy(probe(mu), y)
-
-            x_adv = x.clone().detach().requires_grad_(True)
-            mu_adv, _ = vae.encoder(x_adv)
-            F.cross_entropy(probe(mu_adv), y).backward()
-            with torch.no_grad():
-                x_adv = x + eps * x_adv.grad.sign()
-                x_adv = torch.clamp(x_adv, 0.0, 1.0)
-            x_adv = x_adv.detach()
-
-            optimizer.zero_grad()
-            with torch.no_grad():
-                mu_adv, _ = vae.encoder(x_adv)
-            loss_adv = F.cross_entropy(probe(mu_adv), y)
-
-            loss = (1.0 - adv_lambda) * loss_clean + adv_lambda * loss_adv
-            loss.backward()
-            optimizer.step()
-            tr_loss += loss.item()
-
-        tr_loss /= len(trainloader)
-
-        probe.eval()
-        val_loss = 0.0
-        with torch.no_grad():
-            for x, y in validloader:
-                x, y = x.to(device), y.to(device)
-                mu, _ = vae.encoder(x)
-                val_loss += F.cross_entropy(probe(mu), y).item()
-        val_loss /= len(validloader)
-
-        if (epoch + 1) % 10 == 0:
-            print(f"Epoch {epoch+1}/{epochs} | tr={tr_loss:.4f} | val={val_loss:.4f}")
-
-        if val_loss < best_val_loss:
-            best_val_loss    = val_loss
-            best_state       = copy.deepcopy(probe.state_dict())
-            patience_counter = 0
-        else:
-            patience_counter += 1
-        if patience_counter >= patience:
-            print(f"Early stopping at epoch {epoch+1}")
-            break
-
-    if best_state is not None:
-        probe.load_state_dict(best_state)
-    return probe
-
 class VAEProbe(nn.Module):
     def __init__(self, vae, probe):
         super().__init__()
@@ -281,14 +163,14 @@ train_adversarial(
     mlp_raw_adv,
     make_loader(X_tr_pool, y_tr_pool_enc, shuffle=True),
     make_loader(X_va_pool, y_va_pool_enc),
-    device, eps=ADV_EPS, adv_lambda=ADV_LAMBDA,
+    device, eps=ADV_EPS, adv_lambda=ADV_LAMBDA, attack="fgsm"
 )
 
 
 # ============================================================
-# TRAIN LINEAR PROBE ADVERSARIAL (over DALMA adversarial)
+# TRAIN LINEAR PROBE ADVERSARIAL (over DALMA)
 # ============================================================
-print("\n===== TRAINING LINEAR PROBE ADVERSARIAL (DALMA adversarial) =====")
+print("\n===== TRAINING LINEAR PROBE ADVERSARIAL (DALMA) =====")
 probe_adv = LinearProbe_Extended(
     latent_dim=64, n_species=n_classes_pool,
     epochs=50, lr=1e-3, patience=10,
@@ -297,10 +179,10 @@ train_probe_adversarial(
     vae_adv, probe_adv,
     make_loader(X_tr_pool, y_tr_pool_enc, shuffle=True),
     make_loader(X_va_pool, y_va_pool_enc),
-    device, eps=ADV_EPS, adv_lambda=ADV_LAMBDA,
+    device, eps=ADV_EPS, adv_lambda=ADV_LAMBDA, attack="fgsm"
 )
 
-pipeline_adv_adv = VAEProbe(vae_adv, probe_adv).to(device).eval()
+pipeline_adv = VAEProbe(vae_adv, probe_adv).to(device).eval()
 
 
 # ============================================================
@@ -313,7 +195,7 @@ y_msumg_enc = le_pool.transform(label_msumg)
 
 models_to_compare = {
     "MLP raw (adversarial)":       mlp_raw_adv,
-    "VAE+Probe adv / probe adv":   pipeline_adv_adv,
+    "VAE+Probe adv / probe adv":   pipeline_adv,
 }
 
 print("\n===== ADVERSARIAL ROBUSTNESS SWEEP =====")
