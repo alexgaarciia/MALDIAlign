@@ -1,0 +1,32 @@
+experiment:
+  name: vae_multidecoder_prior_adv_pgd
+  seed: 42
+  output_dir: experiments/results
+
+data:
+  domains: ["DRIAMS_A", "DRIAMS_B", "DRIAMS_C", "MARISMA", "RKI"]
+  species_list: ["Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus","Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"]
+  normalization: row_minmax
+  test_size: 0.2
+  batch_size: 128
+  use_species_weights: False
+
+model:
+  type: vae_multidecoder_prior_adv
+  latent_dim: 64
+  num_domains: 5
+  n_species: 6
+  adv_eps: 0.05
+  adv_lambda: 0.5
+  adv_attack: "pgd"
+  pgd_steps: 10
+
+training:
+  epochs: 100
+  lr: 1e-4
+  patience: 20
+  metrics_plot_title: "VAE Multidecoder Prior + PGD Adversarial Training"
+
+evaluation:
+  use_domain: false
+  compute_tsne: false
