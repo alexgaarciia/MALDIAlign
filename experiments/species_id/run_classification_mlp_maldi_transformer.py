@@ -39,6 +39,7 @@ from src.data.datasets import *
 from src.data.preprocessing import *
 from src.evaluation.metrics import *
 from src.evaluation.eval import make_loader
+from src.finetuning.malditransformer import get_transformer_latent
 
 from models.baselines.mlp_latent import LinearProbe_Extended
 
@@ -48,31 +49,36 @@ from models.baselines.mlp_latent import LinearProbe_Extended
 # ============================================================
 MODEL_SIZES = ["S", "M", "L", "XL"]
 
-parser = argparse.ArgumentParser(description="MaldiTransformer + MLP evaluation")
-parser.add_argument(
-    "--size", "-s",
-    type=str,
-    required=True,
-    choices=MODEL_SIZES,
-    help="MaldiTransformer size: S, M, L or XL",
-)
+parser = argparse.ArgumentParser(description="MaldiTransformer + linear probe evaluation (frozen or fine-tuned encoder)")
+parser.add_argument("--size", "-s", type=str, required=True, choices=MODEL_SIZES, help="MaldiTransformer size: S, M, L or XL")
+parser.add_argument("--finetuned", action="store_true", help="use the fine-tuned checkpoint instead of the frozen pretrained one")
+parser.add_argument("--ckpt", type=str, default=None, help="fine-tuned checkpoint path (only with --finetuned); default assets/MaldiTransformer{SIZE}_ft.ckpt")
 args = parser.parse_args()
 
 SIZE = args.size
-CHECKPOINT_PATH = Path(f"assets/MaldiTransformer{SIZE}.ckpt")
+ENCODER = "finetuned" if args.finetuned else "frozen"
+if args.finetuned:
+    CHECKPOINT_PATH = Path(args.ckpt) if args.ckpt else Path(f"assets/MaldiTransformer{SIZE}_ft.ckpt")
+else:
+    CHECKPOINT_PATH = Path(f"assets/MaldiTransformer{SIZE}.ckpt")
+
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-OUT_PATH = Path(f"experiments/species_id/results/{timestamp}/mlp_transformer_{SIZE}.csv")
-N_PEAKS = 200  
+OUT_PATH = Path(f"experiments/species_id/results/{timestamp}/mlp_transformer_{SIZE}{'_ft' if args.finetuned else ''}.csv")
+OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+RUNS_PATH = OUT_PATH.with_name(OUT_PATH.stem + "_runs.csv")
+
+N_PEAKS = 200
+SEEDS = [42, 123, 456, 789, 1011]
 EXPERIMENT_DIR = Path("/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_multidecoder_prior/20260409_100009")
+BASE = "/export/data_ml4ds/bacteria_id/MALDIAlign_Alex"
+
+print(f"Encoder: {ENCODER} | checkpoint: {CHECKPOINT_PATH}")
+print(f"Output: {OUT_PATH} | seeds: {SEEDS}")
 
 
 # ============================================================
 # DATA LOADING
 # ============================================================
-print("\n" + "="*60)
-print("===== LOADING DATA =====")
-print("="*60)
-
 cfg = load_config()
 
 driams_dict = load_driams(cfg["data"]["DRIAMS_FULL"])
@@ -81,29 +87,27 @@ rki_dict = load_rki(cfg["data"]["RKI_FULL"])
 msumg_dict = load_msumg(cfg["data"]["MSUMG_FULL"])
 
 species_to_keep = [
-    "Klebsiella_Pneumoniae", "Escherichia_Coli", "Staphylococcus_Aureus",
-    "Pseudomonas_Aeruginosa", "Enterococcus_Faecium", "Enterobacter_cloacae_complex"
+    "Klebsiella_Pneumoniae","Escherichia_Coli","Staphylococcus_Aureus",
+    "Pseudomonas_Aeruginosa","Enterococcus_Faecium", "Enterobacter_cloacae_complex"
 ]
 
 mask_driams = np.isin(driams_dict["label"], species_to_keep)
 data_driams = driams_dict["data"][mask_driams]
 label_driams = driams_dict["label"][mask_driams]
 meta_driams = driams_dict["meta"][mask_driams].reset_index(drop=True)
+meta_driams["hospital"] = meta_driams["hospital"].str.replace("-", "_", regex=False)
 
 mask_marisma = np.isin(marisma_dict["label"], species_to_keep)
 data_marisma = marisma_dict["data"][mask_marisma]
 label_marisma = marisma_dict["label"][mask_marisma]
-meta_marisma = marisma_dict["meta"][mask_marisma].reset_index(drop=True)
 
 mask_rki = np.isin(rki_dict["label"], species_to_keep)
 data_rki = rki_dict["data"][mask_rki]
 label_rki = rki_dict["label"][mask_rki]
-meta_rki = rki_dict["meta"][mask_rki].reset_index(drop=True)
 
 mask_msumg = np.isin(msumg_dict["label"], species_to_keep)
 data_msumg = msumg_dict["data"][mask_msumg]
 label_msumg = msumg_dict["label"][mask_msumg]
-meta_msumg = msumg_dict["meta"][mask_msumg].reset_index(drop=True)
 
 # Split DRIAMS
 maskA = meta_driams["hospital"] == "DRIAMS_A"
@@ -126,59 +130,19 @@ data_rki = row_minmax_normalize(data_rki)
 data_msumg = row_minmax_normalize(data_msumg)
 
 # Merge
-data_list = [dataA,dataB,dataC,data_marisma,data_rki]
-label_list = [labelA,labelB,labelC,label_marisma,label_rki]
+data_list = [dataA, dataB, dataC, data_marisma, data_rki]
+label_list = [labelA, labelB, labelC, label_marisma, label_rki]
 
 data_final = np.vstack(data_list)
 label_final = np.concatenate(label_list)
-
-print("\n===== DATA LOADED =====")
 
 # Load splits
 with open(EXPERIMENT_DIR / "data_splits.pkl", "rb") as f:
     splits = pickle.load(f)
 
-print("\n===== SPLITS LOADED =====")
-
 
 # ============================================================
-# TRANSFORMER EMBEDDING EXTRACTION
-# ============================================================
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-def get_transformer_latent(data_matrix, model, n_peaks=200, batch_size=256):
-    model.eval()
-    model.to(device)
-    mz_axis = torch.linspace(2000, 20000, steps=6000).to(device)
-    all_z = []
-    
-    for i in range(0, len(data_matrix), batch_size):
-        batch_bin = torch.from_numpy(data_matrix[i:i+batch_size]).float().to(device)
-        
-        # Peak picking over the bins
-        intensities, indices = torch.topk(batch_bin, k=n_peaks, dim=1)
-        mzs = mz_axis[indices]
-        
-        batch_dict = {"mz": mzs, "intensity": intensities}
-        
-        with torch.no_grad():
-            # Extract [CLS] token
-            z_seq = model.transformer(batch_dict)
-            z_cls = z_seq[:, 0, :]
-            all_z.append(z_cls.cpu().numpy())
-            
-    return np.vstack(all_z)
-
-print("\n===== EXTRACTING TRANSFORMER EMBEDDINGS =====")
-model = MaldiTransformer.load_from_checkpoint(CHECKPOINT_PATH, map_location=device, strict=False)
-
-Z_final = get_transformer_latent(data_final, model, n_peaks=N_PEAKS)
-Z_D = get_transformer_latent(dataD, model, n_peaks=N_PEAKS)
-Z_MSUMG = get_transformer_latent(data_msumg, model, n_peaks=N_PEAKS)
-
-
-# ============================================================
-# PREPARE DATASETS
+# BUILD TEST SETS FROM SPLITS
 # ============================================================
 SPLIT_NAMES = {
     "A": "DRIAMS_A",
@@ -187,112 +151,83 @@ SPLIT_NAMES = {
     "MARISMA": "MARISMA",
     "RKI": "RKI",
 }
- 
-domains_train = {}
-domains_val = {}
+
 test_sets = {}
- 
 for k, sk in SPLIT_NAMES.items():
-    tr_idx = splits["splits_per_domain"][sk]["train_idx"]
-    va_idx = splits["splits_per_domain"][sk]["val_idx"]
     te_idx = splits["splits_per_domain"][sk]["test_idx"]
- 
-    domains_train[k] = (data_final[tr_idx], label_final[tr_idx])
-    domains_val[k] = (data_final[va_idx], label_final[va_idx])
     test_sets[k] = (data_final[te_idx], label_final[te_idx])
- 
-test_sets["D (OOD)"]= (dataD, labelD)
+
+# OOD test sets
+test_sets["D (OOD)"] = (dataD, labelD)
 test_sets["MSUMG (OOD)"] = (data_msumg, label_msumg)
 
-# Latent
-domains_train_latent = {}
-domains_val_latent = {}
-test_sets_latent = {}
- 
+
+# ============================================================
+# TRANSFORMER EMBEDDING EXTRACTION
+# ============================================================
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+print("\n===== EXTRACTING TRANSFORMER EMBEDDINGS =====")
+transformer_model = MaldiTransformer.load_from_checkpoint(CHECKPOINT_PATH, map_location=device, strict=False)
+
+ck = torch.load(CHECKPOINT_PATH, map_location="cpu", weights_only=False)
+Z_final = get_transformer_latent(data_final, transformer_model, n_peaks=N_PEAKS, device=device)
+Z_D = get_transformer_latent(dataD, transformer_model, n_peaks=N_PEAKS, device=device)
+Z_MSUMG = get_transformer_latent(data_msumg, transformer_model, n_peaks=N_PEAKS, device=device)
+
+
+# ============================================================
+# TRAIN SETS AND TEST SETS (latent)
+# ============================================================
+train_sets = {k: (splits["splits_per_domain"][sk]["train_idx"], splits["splits_per_domain"][sk]["val_idx"]) for k, sk in SPLIT_NAMES.items()}
+train_sets["ALL"] = (
+    np.concatenate([v[0] for v in train_sets.values()]),
+    np.concatenate([v[1] for v in train_sets.values()]),
+)
+
+test_latent, test_labels = {}, {}
 for k, sk in SPLIT_NAMES.items():
-    tr_idx = splits["splits_per_domain"][sk]["train_idx"]
-    va_idx = splits["splits_per_domain"][sk]["val_idx"]
     te_idx = splits["splits_per_domain"][sk]["test_idx"]
- 
-    domains_train_latent[k] = (Z_final[tr_idx], label_final[tr_idx])
-    domains_val_latent[k] = (Z_final[va_idx], label_final[va_idx])
-    test_sets_latent[k] = (Z_final[te_idx], label_final[te_idx])
- 
-test_sets_latent["D (OOD)"] = (Z_D, labelD)
-test_sets_latent["MSUMG (OOD)"] = (Z_MSUMG, label_msumg)
- 
+    test_latent[k], test_labels[k] = Z_final[te_idx], label_final[te_idx]
+
+test_latent["D (OOD)"], test_labels["D (OOD)"] = Z_D, labelD
+test_latent["MSUMG (OOD)"], test_labels["MSUMG (OOD)"] = Z_MSUMG, label_msumg
+
 
 # ============================================================
-# EVALUATION
+# EVALUATION: each train set, one linear probe per seed
 # ============================================================
-results = []
+run_rows = []
 
-for train_name in domains_train.keys():
+for train_name, (tr_idx, va_idx) in train_sets.items():
     print("\n" + "="*70)
-    print(f"TRAIN DOMAIN: {train_name}")
+    print(f"TRAIN DOMAIN: {train_name} | train: {len(tr_idx)} | val: {len(va_idx)}")
     print("="*70)
 
-    X_tr, y_tr = domains_train[train_name]
-    X_va, y_va = domains_val[train_name]
- 
-    Z_tr, _ = domains_train_latent[train_name]
-    Z_va, _ = domains_val_latent[train_name]
-
-    # ============================
-    # LABEL ENCODING
-    # ============================
-    le = LabelEncoder()
-    y_tr_enc = le.fit_transform(y_tr)
-    y_va_enc = le.transform(y_va)
- 
+    le = LabelEncoder().fit(species_to_keep)
+    y_tr_enc = le.transform(label_final[tr_idx])
+    y_va_enc = le.transform(label_final[va_idx])
     n_classes = len(le.classes_)
 
-    # ============================
-    # TRAIN MLP LATENT
-    # ============================
-    print("\n--- Training MLP (latent) ---")
-    mlp_lat = LinearProbe_Extended(
-        latent_dim=Z_tr.shape[1],
-        n_species=n_classes,
-        epochs=50,
-        lr=1e-3,
-        patience=10
-    )
- 
-    mlp_lat.trainloop(
-        make_loader(Z_tr, y_tr_enc, shuffle=True),
-        make_loader(Z_va, y_va_enc),
-        device
-    )
+    for seed in SEEDS:
+        print(f"\n--- train={train_name} | seed={seed} ---")
+        torch.manual_seed(seed)
+        np.random.seed(seed)
 
-    # ============================
-    # TEST LOOP
-    # ============================
-    for test_name in test_sets.keys():
-        print("\n" + "="*70)
-        print(f"TEST DOMAIN: {test_name}")
-        print("="*70)
+        mlp_lat = LinearProbe_Extended(latent_dim=Z_final.shape[1], n_species=n_classes, epochs=50, lr=1e-3, patience=10)
+        mlp_lat.trainloop(make_loader(Z_final[tr_idx], y_tr_enc, shuffle=True), make_loader(Z_final[va_idx], y_va_enc), device)
 
-        X_te, y_te = test_sets[test_name]
-        Z_te, _ = test_sets_latent[test_name]
-        y_te_enc = le.transform(y_te)
+        for test_name in test_latent.keys():
+            y_te_enc = le.transform(test_labels[test_name])
 
-        test_loader_orig = make_loader(X_te, y_te_enc)
-        test_loader_lat  = make_loader(Z_te, y_te_enc)
- 
-        for  model, loader in [(mlp_lat,  test_loader_lat)]:
-            metrics = metrics_report_mlp(
-                loader,
-                model,
-                f"{train_name}-{test_name}",
-                device=device,
-                class_names=le.classes_
-            )
- 
-            results.append({
+            metrics = metrics_report_mlp(make_loader(test_latent[test_name], y_te_enc), mlp_lat, f"{train_name}-{test_name}-s{seed}", device=device, class_names=le.classes_,)
+
+            run_rows.append({
                 "train": train_name,
                 "test": test_name,
                 "space": "latent",
+                "encoder": ENCODER,
+                "seed": seed,
                 "balanced_accuracy": metrics["Balanced_Accuracy"],
                 "f1_macro": metrics["F1_Macro"],
                 "recall_macro": metrics["Recall_Macro"],
@@ -301,86 +236,30 @@ for train_name in domains_train.keys():
                 "cm": metrics["Confusion Matrix"],
             })
 
+        pd.DataFrame(run_rows).to_csv(RUNS_PATH, index=False)
+
 
 # ============================================================
-# POOLED EVALUATION — train con todos los source domains
+# SUMMARY: mean and SD over seeds
 # ============================================================
-print("\n" + "="*70)
-print("TRAIN DOMAIN: ALL (A+B+C+MARISMA+RKI pooled)")
-print("="*70)
+metric_cols = ["balanced_accuracy", "f1_macro", "recall_macro", "specificity_macro", "roc_auc"]
+df_runs = pd.DataFrame(run_rows)
 
-all_tr_idx = np.concatenate([
-    splits["splits_per_domain"][sk]["train_idx"]
-    for sk in SPLIT_NAMES.values()
-    if sk in splits["splits_per_domain"]
-])
-all_va_idx = np.concatenate([
-    splits["splits_per_domain"][sk]["val_idx"]
-    for sk in SPLIT_NAMES.values()
-    if sk in splits["splits_per_domain"]
-])
+df_summary = df_runs.groupby(["train", "test", "space", "encoder"], sort=False)[metric_cols].agg(["mean", "std"])
+df_summary.columns = [f"{m}_{s}" for m, s in df_summary.columns]
+df_summary = df_summary.reset_index()
+df_summary.insert(4, "n_seeds", len(SEEDS))
 
-Z_tr_pool = Z_final[all_tr_idx]
-y_tr_pool = label_final[all_tr_idx]
-Z_va_pool = Z_final[all_va_idx]
-y_va_pool = label_final[all_va_idx]
-
-le_pool = LabelEncoder()
-y_tr_pool_enc = le_pool.fit_transform(y_tr_pool)
-y_va_pool_enc = le_pool.transform(y_va_pool)
-n_classes_pool = len(le_pool.classes_)
-
-print(f"Pooled train: {len(Z_tr_pool)} | Pooled val: {len(Z_va_pool)}")
-
-print("\n--- Training MLP (latent) ---")
-mlp_lat_pool = LinearProbe_Extended(
-    latent_dim=Z_tr_pool.shape[1],
-    n_species=n_classes_pool,
-    epochs=50,
-    lr=1e-3,
-    patience=10,
-)
-mlp_lat_pool.trainloop(
-    make_loader(Z_tr_pool, y_tr_pool_enc, shuffle=True),
-    make_loader(Z_va_pool, y_va_pool_enc),
-    device,
-)
-
-for test_name in test_sets.keys():
-    print("\n" + "="*70)
-    print(f"TEST DOMAIN: {test_name}")
-    print("="*70)
-
-    Z_te, _ = test_sets_latent[test_name]
-    _, y_te = test_sets[test_name]
-    y_te_enc = le_pool.transform(y_te)
-
-    metrics = metrics_report_mlp(
-        make_loader(Z_te, y_te_enc),
-        mlp_lat_pool,
-        f"ALL-{test_name}",
-        device=device,
-        class_names=le_pool.classes_,
-    )
-
-    results.append({
-        "train": "ALL",
-        "test":  test_name,
-        "space": "latent",
-        "balanced_accuracy": metrics["Balanced_Accuracy"],
-        "f1_macro":          metrics["F1_Macro"],
-        "recall_macro":      metrics["Recall_Macro"],
-        "specificity_macro": metrics["Specificity_Macro"],
-        "roc_auc":           metrics["ROC_AUC_Macro"],
-        "cm":                metrics["Confusion Matrix"],
-    })
+print("\n===== BALANCED ACCURACY: MEAN ± SD OVER SEEDS =====")
+for _, r in df_summary.iterrows():
+    print(f"{r['train']} -> {r['test']} [{r['encoder']}]: {r['balanced_accuracy_mean']:.4f} ± {r['balanced_accuracy_std']:.4f}")
 
 
 # ============================================================
 # SAVE CSV
 # ============================================================
 print("\n===== SAVING RESULTS =====")
-df = pd.DataFrame(results)
-OUT_PATH.parent.mkdir(parents=True,exist_ok=True)
-df.to_csv(OUT_PATH,index=False)
-print("Saved:", OUT_PATH)
+df_runs.to_csv(RUNS_PATH, index=False)
+df_summary.to_csv(OUT_PATH, index=False)
+print("Saved summary:", OUT_PATH)
+print("Saved per-seed runs:", RUNS_PATH)
