@@ -17,6 +17,10 @@ Official implementation of **DALMA** (*Domain ALignment for MALDI-TOF MS*), a pr
 
 Domain information is only used during training. At inference only the shared encoder is used (`z = μ(x)`), so spectra from any center, seen or unseen, go through the same model.
 
+![DALMA training](figures/dalma_training.png)
+
+![DALMA inference](figures/dalma_inference.png)
+
 ## Installation
 
 ```bash
