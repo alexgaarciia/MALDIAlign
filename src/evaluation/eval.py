@@ -2,7 +2,8 @@ import torch
 import numpy as np
 import pandas as pd
 
-from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score
+from sklearn.preprocessing import label_binarize
+from sklearn.metrics import roc_auc_score, average_precision_score, balanced_accuracy_score, f1_score, precision_score, recall_score
 
 from torch.utils.data import TensorDataset, DataLoader
 
@@ -343,3 +344,98 @@ def evaluate_amr_head(model, X, amr_labels, ab_list, device, batch_size=512, spe
             "n":        int(valid.sum()),
         }
     return results
+
+def predict(mlp, X, device, batch_size=512):
+    """
+    Predicts class labels for a feature matrix using a trained classifier.
+
+    Runs the model in evaluation mode without gradients, processing the data
+    in batches, and returns the argmax over the output logits.
+
+    Args:
+        mlp (torch.nn.Module): Trained classifier returning logits of shape (B, n_classes).
+        X (np.ndarray): Input features of shape (N, n_features).
+        device (torch.device or str): Device on which to run inference.
+        batch_size (int): Number of samples per forward pass. Default: 512.
+
+    Returns:
+        np.ndarray: Predicted class indices of shape (N,).
+    """
+    mlp.eval()
+    X_t = torch.tensor(X, dtype=torch.float32)
+    preds = []
+    with torch.no_grad():
+        for i in range(0, len(X_t), batch_size):
+            logits = mlp(X_t[i:i+batch_size].to(device))
+            preds.append(logits.argmax(1).cpu().numpy())
+    return np.concatenate(preds)
+
+def predict_proba(mlp, X, device, batch_size=512):
+    """
+    Computes class probabilities for a feature matrix using a trained classifier.
+
+    Runs the model in evaluation mode without gradients, processing the data
+    in batches, and applies a softmax to the output logits.
+
+    Args:
+        mlp (torch.nn.Module): Trained classifier returning logits of shape (B, n_classes).
+        X (np.ndarray): Input features of shape (N, n_features).
+        device (torch.device or str): Device on which to run inference.
+        batch_size (int): Number of samples per forward pass. Default: 512.
+
+    Returns:
+        np.ndarray: Class probabilities of shape (N, n_classes); each row sums to 1.
+    """
+    mlp.eval()
+    X_t = torch.tensor(X, dtype=torch.float32)
+    probs_list = []
+    with torch.no_grad():
+        for i in range(0, len(X_t), batch_size):
+            logits = mlp(X_t[i:i+batch_size].to(device))
+            probs_list.append(torch.softmax(logits, dim=1).cpu().numpy())
+    return np.concatenate(probs_list, axis=0)
+
+def compute_all_metrics(y_true, y_pred, y_probs, classes):
+    """
+    Computes a set of multiclass classification metrics.
+
+    Balanced accuracy, F1, precision and recall are macro-averaged. Specificity
+    is computed one-vs-rest per class and averaged (ignoring classes where it is
+    undefined). ROC AUC is macro one-vs-rest restricted to the classes present
+    in `y_true`; it is NaN if it cannot be computed.
+
+    Args:
+        y_true (np.ndarray): Ground-truth class indices of shape (N,).
+        y_pred (np.ndarray): Predicted class indices of shape (N,).
+        y_probs (np.ndarray): Predicted probabilities of shape (N, len(classes)).
+        classes (Sequence): Class names/labels; its length defines the number of classes.
+
+    Returns:
+        dict: Metrics with keys "ba", "f1", "precision", "recall", "specificity"
+            and "roc_auc". All values are NaN if `y_true` has fewer than two
+            distinct classes.
+    """
+    if len(np.unique(y_true)) < 2:
+        return {k: np.nan for k in ["ba", "f1", "precision", "recall", "specificity", "roc_auc"]}
+    
+    ba = balanced_accuracy_score(y_true, y_pred)
+    f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
+    precision = precision_score(y_true, y_pred, average="macro", zero_division=0)
+    recall = recall_score(y_true, y_pred, average="macro", zero_division=0)
+    specs = []
+    for c in range(len(classes)):
+        tn = ((y_true != c) & (y_pred != c)).sum()
+        fp = ((y_true != c) & (y_pred == c)).sum()
+        specs.append(tn / (tn + fp) if (tn + fp) > 0 else np.nan)
+    specificity = np.nanmean(specs)
+    
+    try:
+        classes_present = np.unique(y_true)
+        if len(classes_present) < 2:
+            roc_auc = np.nan
+        else:
+            y_bin = label_binarize(y_true, classes=list(range(len(classes))))
+            roc_auc = roc_auc_score(y_bin[:, classes_present], y_probs[:, classes_present], average="macro", multi_class="ovr")
+    except Exception:
+        roc_auc = np.nan
+    return {"ba": ba, "f1": f1, "precision": precision, "recall": recall, "specificity": specificity, "roc_auc": roc_auc}
