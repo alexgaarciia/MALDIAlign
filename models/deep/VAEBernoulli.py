@@ -12,7 +12,7 @@ class VAE_Bernoulli(nn.Module):
     optionally conditioned on a domain identifier.
     """
 
-    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None):
+    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None, use_species_head=False, lambda_cls=1.0):
         """
         Parameters
         ----------
@@ -25,6 +25,8 @@ class VAE_Bernoulli(nn.Module):
         """
         super().__init__()
         self.use_species_prior = use_species_prior
+        self.use_species_head = use_species_head 
+        self.lambda_cls = lambda_cls
         self.encoder = Encoder(input_dim, latent_dim)
         self.decoder = BernoulliDecoder(latent_dim, input_dim, num_domains=num_domains)
 
@@ -32,6 +34,12 @@ class VAE_Bernoulli(nn.Module):
             assert n_species is not None, "n_species must be provided when use_species_prior=True"
             self.prior = ConditionalPrior(n_species=n_species, latent_dim=latent_dim)
             self.n_species = n_species
+
+        if use_species_head:
+            assert n_species is not None, "n_species must be provided when use_species_head=True"
+            assert not use_species_prior, "use either the conditional prior or the species head, not both"
+            self.n_species = n_species
+            self.species_head = nn.Linear(latent_dim, n_species)
 
     def reparameterize(self, mu, logvar):
         """
@@ -85,11 +93,16 @@ class VAE_Bernoulli(nn.Module):
             KL = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp(), dim=1)
 
         NLL = -(RE - beta * KL)
-        return NLL.mean(), (-RE).mean(), KL.mean()
+        loss = NLL.mean()
+        cls = torch.zeros((), device=x.device)
+        if self.use_species_head and species_id is not None:
+            cls = torch.nn.functional.cross_entropy(self.species_head(mu), species_id)
+            loss = loss + self.lambda_cls * cls
+        return loss, (-RE).mean(), KL.mean()
 
 class VAE_Bernoulli_Extended(VAE_Bernoulli):
-    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None, lr=1e-3, epochs=100, patience=10, annealing_epochs=50):
-        super().__init__(input_dim, latent_dim, num_domains=num_domains, use_species_prior=use_species_prior, n_species=n_species)
+    def __init__(self, input_dim, latent_dim, num_domains=1, use_species_prior=False, n_species=None, use_species_head=False, lambda_cls=1.0, lr=1e-3, epochs=100, patience=10, annealing_epochs=50):
+        super().__init__(input_dim, latent_dim, num_domains=num_domains, use_species_prior=use_species_prior, n_species=n_species, use_species_head=use_species_head, lambda_cls=lambda_cls)
         self.lr = lr
         self.epochs = epochs
         self.annealing_epochs = annealing_epochs
@@ -115,7 +128,9 @@ class VAE_Bernoulli_Extended(VAE_Bernoulli):
             total_loss, total_recon, total_kl = 0, 0, 0
 
             for batch in trainloader:
-                x, domains, species = batch[0].to(device), batch[1].to(device), batch[2].to(device) if self.use_species_prior else None
+                need_species = self.use_species_prior or self.use_species_head
+                x, domains = batch[0].to(device), batch[1].to(device)
+                species = batch[2].to(device) if need_species else None
                 self.optimizer.zero_grad()
                 mu, logvar, z = self.forward(x, domain_id=domains)
                 loss, recon, kl = self.elbo_loss(x, mu, logvar, z, beta, domain_id=domains, species_id=species)
@@ -137,7 +152,9 @@ class VAE_Bernoulli_Extended(VAE_Bernoulli):
 
             with torch.no_grad():
                 for batch in validloader:
-                    x, domains, species = batch[0].to(device), batch[1].to(device), batch[2].to(device) if self.use_species_prior else None
+                    need_species = self.use_species_prior or self.use_species_head
+                    x, domains = batch[0].to(device), batch[1].to(device)
+                    species = batch[2].to(device) if need_species else None
                     mu, logvar, z = self.forward(x, domain_id=domains)
                     loss, recon, kl = self.elbo_loss(x, mu, logvar, z, beta, domain_id=domains, species_id=species)
                     val_loss += loss.item()

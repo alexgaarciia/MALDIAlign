@@ -48,6 +48,8 @@ def build_model(cfg: dict, input_dim: int, antibiotic_names=None, num_domains=No
             num_domains=model_cfg.get("num_domains", 1),
             use_species_prior=model_cfg.get("use_species_prior", False),
             n_species=model_cfg.get("n_species", None),
+            use_species_head=model_cfg.get("use_species_head", False),
+            lambda_cls=float(model_cfg.get("lambda_cls", 1.0)),
             epochs=training_cfg["epochs"],
             annealing_epochs=training_cfg["annealing_epochs"],
             patience=training_cfg["patience"])
