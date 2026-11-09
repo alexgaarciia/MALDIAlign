@@ -52,6 +52,10 @@ ARCH_CONFIGS = {
         "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260614_235638",
         "out_path": f"experiments/species_id/results/{timestamp}/mlp_vae.csv",
     },
+    "vae_species_head": {
+        "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20261109_075609",
+        "out_path": f"experiments/species_id/results/{timestamp}/mlp_vae_species_head.csv",
+    },
     "vae_prior": {
         "experiment_dir": "/export/usuarios01/agnavarr/MALDIAlign/experiments/results/vae_bernoulli/20260614_235109",
         "out_path": f"experiments/species_id/results/{timestamp}/mlp_vae_prior.csv",
@@ -218,6 +222,17 @@ elif ARCHITECTURE == "vae":
         VAE_Bernoulli_Extended(
             input_dim=data_final.shape[1],
             latent_dim=64),
+        EXPERIMENT_DIR / "model.pth"
+    )
+
+elif ARCHITECTURE == "vae_species_head":
+    vae = load_model(
+        VAE_Bernoulli_Extended(
+            input_dim=data_final.shape[1],
+            latent_dim=64,
+            num_domains=1,
+            n_species=len(np.unique(label_final)),
+            use_species_head=True),
         EXPERIMENT_DIR / "model.pth"
     )
 
