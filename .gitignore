@@ -46,3 +46,4 @@ configs/config.yaml
 experiments/species_id/run_classification_mlp.py
 experiments/species_id/run_single_mlp.py
 experiments/novelty_detection/results_explorer.ipynb
+configs/
