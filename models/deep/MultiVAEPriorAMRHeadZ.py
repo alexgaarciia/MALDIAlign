@@ -279,7 +279,8 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(MultiVAE_Bernoulli_Spec
         self.patience = patience
 
         self.optimizer = optim.Adam(self.parameters(), lr=self.lr, weight_decay=1e-3)
-        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode='max', factor=0.5, patience=20, min_lr=1e-6, cooldown=10)
+        scheduler_mode = 'min' if self.lambda_amr == 0 else 'max'
+        self.scheduler = optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, mode=scheduler_mode, factor=0.5, patience=20, min_lr=1e-6, cooldown=10)
 
         self.loss_during_training = []
         self.reconstruc_during_training = []
@@ -453,7 +454,7 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(MultiVAE_Bernoulli_Spec
             self.AMR_during_training.append((tr_amr, val_amr))
             self.AUC_during_training.append((tr_auc, val_auc))
 
-            self.scheduler.step(val_auc)
+            self.scheduler.step(val_loss if self.lambda_amr == 0 else val_auc)
             current_lr = self.optimizer.param_groups[0]['lr']
 
             if (epoch + 1) % 10 == 0:
@@ -475,16 +476,24 @@ class MultiVAE_Bernoulli_SpeciesPrior_AMR_Head_ExtendedZ(MultiVAE_Bernoulli_Spec
             # =======================
             # EARLY STOPPING
             # =======================
-            if val_auc > best_val_auc:
-                best_val_auc = val_auc
-                best_state = copy.deepcopy(self.state_dict())
-                patience_counter = 0
+            if self.lambda_amr == 0:
+                if val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    best_state = copy.deepcopy(self.state_dict())
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
             else:
-                patience_counter += 1
+                if val_auc > best_val_auc:
+                    best_val_auc = val_auc
+                    best_state = copy.deepcopy(self.state_dict())
+                    patience_counter = 0
+                else:
+                    patience_counter += 1
 
             if patience_counter >= self.patience:
                 print(f"Early stopping at epoch {epoch+1}")
                 break
-
+            
         if best_state is not None:
             self.load_state_dict(best_state)
